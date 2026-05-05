@@ -23,7 +23,7 @@ on:
       max_turns:
         description: "Max agent turns per invocation"
         type: number
-        default: 25
+        default: 40
       allowed_tools:
         description: "Value passed to --allowedTools (raw, including quotes)"
         type: string
