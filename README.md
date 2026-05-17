@@ -2,6 +2,8 @@
 
 Reusable GitHub Actions workflows for PitziLabs repositories.
 
+**Authorship:** The workflows and documentation in this repo are co-written with [Claude](https://claude.ai) (Anthropic). I direct the work and review the output; Claude writes the YAML. I'm an infrastructure operator, not a software engineer — please don't read this repo as a portfolio of coding ability.
+
 ## Workflows
 
 ### `claude-responder.yml`
