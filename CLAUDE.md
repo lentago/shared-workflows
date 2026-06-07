@@ -3,8 +3,12 @@
 > Read [README.md](README.md) for calling conventions and full examples of
 > each reusable workflow. This file is operational notes for Claude: how
 > changes here propagate to the fleet, version-pinning discipline, and the
-> conventions that aren't obvious from the YAML. Fleet-wide rules (PR
-> workflow, attribution) live in `~/repos/CLAUDE.md`.
+> conventions that aren't obvious from the YAML. **The fleet-wide PR-workflow
+> rules are canonical here** — see "Fleet PR-workflow (canonical source)"
+> below. The `~/repos/CLAUDE.md` mirror exists only so local Claude Code
+> sessions pick it up via the directory-tree walk (it can't be read by CI
+> runners or fresh clones, which is why this in-git copy is the source of
+> truth).
 
 ## What this repo is
 
@@ -62,3 +66,90 @@ repo secrets store, passed through transparently.
   `.github/workflows/<name>.yml`.
 - **Why is a caller failing?** Check the caller's Actions tab — the reusable
   workflow runs in the caller's context, not here.
+
+---
+
+## Fleet PR-workflow (canonical source)
+
+> This section is the **single source of truth** for the PitziLabs fleet's
+> PR-workflow conventions. It governs every PitziLabs repo. Two mirrors
+> exist for reach:
+>
+> 1. `~/repos/CLAUDE.md` carries a copy so local Claude Code sessions pick
+>    it up via the directory-tree memory walk.
+> 2. The `review_prompt` template in `.github/workflows/claude-review.yml`
+>    inverts these rules into review criteria so the CI reviewer flags PRs
+>    that violate them. **Both mirrors must stay in sync with this section.**
+>
+> If you edit anything below, also update the matching content in
+> `~/repos/CLAUDE.md` (Pull-request workflow section) and the
+> `review_prompt` block in `claude-review.yml`.
+
+### Open a PR — that's the deliverable
+
+When implementation is complete, **open a pull request as the final step.**
+Do not stop at "pushed the branch" — the PR is part of the deliverable.
+
+### PR title
+
+The title matches or clearly refines the title of the issue the PR closes.
+
+### PR body
+
+The body includes `Closes #<number>` (or `Fixes #<number>` / `Resolves
+#<number>`) so merging closes the issue. Plus a short summary of what
+changed and why.
+
+For repos with a `Prompt-Origin` convention (currently `homeassistant-config`),
+the body also opens with an `## Origin` section narrating the original
+prompt in third-person past-tense (e.g. "Chris wanted X…"). See that
+repo's CLAUDE.md for the canonical format.
+
+### Auto-merge arming (per-PR)
+
+Auto-merge arming is per-PR, not a repo-wide default. After opening the
+PR, arm it so the required status checks gate the merge and fire it when
+green:
+
+- **Local sessions** (gh CLI available):
+  ```bash
+  gh pr merge <PR_NUMBER> --auto --squash --delete-branch
+  ```
+- **Cloud sessions** (no gh CLI): call the GitHub MCP server's
+  auto-merge tool with `mergeMethod: "SQUASH"`. Delete the branch after
+  merge if branch-protection doesn't do it for you.
+
+Without the arming step, the PR will wait for a human click forever.
+
+### Don't bypass the gate
+
+Do **not** merge the PR yourself with a non-`--auto` merge — let the
+required status checks gate it. Skip auto-merge only on drafts (the gh
+flag errors on draft PRs).
+
+### Scope discipline
+
+Make only the changes the issue asks for. If you notice adjacent issues,
+open a separate ticket — don't sweep them into the current PR.
+
+### Co-authorship disclosure
+
+Any README or CHANGELOG entry that describes substantive feature work
+must disclose Claude co-authorship at the top, not just in a commit
+trailer. Commit messages also carry the `Co-Authored-By: Claude` trailer.
+
+### Cross-repo conventions
+
+- **One-off vs. fleet-wide** — if a change is meant to apply to every
+  repo, drive it from `~/repos/` with a loop + `gh` calls; don't cd into
+  one repo and forget to propagate. Conversely, single-repo changes
+  should be done inside that repo, not from the fleet root.
+- **Read-only first** — before bulk-mutating settings, run the
+  read-only equivalent against the whole fleet and surface a summary
+  before applying.
+- **Shared workflows** — when a CI improvement applies broadly, prefer
+  putting the reusable workflow here in `shared-workflows/` and updating
+  callers, instead of copy-pasting yaml into each repo.
+- **Branding consistency** — when a README pattern, badge set, or
+  attribution footer becomes the standard, propagate via PR (not direct
+  push) so each repo has a record of the change.

@@ -4,9 +4,15 @@
 # Reusable workflow for automated PR review. Callers wire up the on:
 # pull_request trigger (with their own paths-ignore filter) and pass a
 # repo-specific review_prompt; this workflow handles the boilerplate
-# (PR context header, common rules, output format).
+# (PR context header, fleet PR-workflow checks, common rules, output format).
 #
 # Pinned to Haiku by default — review is mechanical pattern-matching.
+#
+# SYNC OBLIGATION: the "Fleet PR-workflow checks" block in the prompt below
+# mirrors the canonical "Fleet PR-workflow (canonical source)" section in
+# this repo's CLAUDE.md. If you edit one, edit the other. Keep them
+# semantically aligned — the .md guides actors, the prompt block frames the
+# same rules as review criteria the reviewer flags.
 # ============================================================================
 
 name: Claude Code Review (reusable)
@@ -63,6 +69,29 @@ jobs:
             Review this pull request. The PR branch is already checked out.
 
             ${{ inputs.review_prompt }}
+
+            Fleet PR-workflow checks (flag PRs that violate any of these — these
+            mirror the canonical rules in PitziLabs/shared-workflows CLAUDE.md
+            "Fleet PR-workflow (canonical source)"; treat each as a review item):
+
+            1. ISSUE LINK — the PR body must contain `Closes #<n>`, `Fixes
+               #<n>`, or `Resolves #<n>` so merge closes the linked issue.
+               Inspect: `gh pr view ${{ github.event.pull_request.number }}
+               --json body,title`. Flag if absent.
+            2. TITLE ALIGNMENT — when an issue is linked, the PR title should
+               match or clearly refine that issue's title (don't be pedantic
+               about phrasing; flag only when the title is misleading about
+               what the PR does).
+            3. SCOPE DISCIPLINE — changes should match the linked issue's
+               scope. Flag substantive unrelated changes bundled in
+               (e.g., an issue about renaming X also rewrites unrelated Y).
+               Adjacent fixes belong in separate tickets.
+            4. CO-AUTHORSHIP DISCLOSURE — if README.md or CHANGELOG.md is
+               among the changed files and the diff narrates substantive
+               feature work, flag if the changed section lacks an explicit
+               "Generated with Claude" / "Co-authored with Claude" disclosure
+               at the top of that section (commit trailers alone are not
+               enough — this is Chris's operator-not-SWE convention).
 
             Rules:
             - Only comment on actual problems or meaningful improvements
