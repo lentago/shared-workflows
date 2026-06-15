@@ -106,12 +106,51 @@ The title matches or clearly refines the title of the issue the PR closes.
 
 The body includes `Closes #<number>` (or `Fixes #<number>` / `Resolves
 #<number>`) so merging closes the issue. Plus a short summary of what
-changed and why.
+changed and why, and an `## Origin` section (below).
 
-For repos with a `Prompt-Origin` convention (currently `homeassistant-config`),
-the body also opens with an `## Origin` section narrating the original
-prompt in third-person past-tense (e.g. "Chris wanted X…"). See that
-repo's CLAUDE.md for the canonical format.
+### Every PR opens with an `## Origin` section
+
+**Fleet-wide — every PitziLabs repo.** Immediately after the one-line
+summary, the PR body opens with an `## Origin` section disclosing how the
+change came about: the durable record of what was asked for, written in
+**third-person past-tense narrative** referring to the requester by name
+(e.g. "Chris wanted X…").
+
+Treat the prompts you receive as raw material, not the artifact itself — the
+PR archive is read months later by reviewers (and future Chris) who weren't
+in the session, and a terse verbatim "make X work" reads as noise out of
+context. A 2–4 sentence narrative translates the moment into a durable record.
+
+- **Lead with the requester and what they wanted**, e.g. "Chris wanted the
+  kiosk to surface household presence so the monitor reflects who's home."
+- **Include the substantive constraints** they specified and any trade-offs
+  they flagged or accepted.
+- **Don't quote the prompt verbatim**, even when it's short — translate to
+  narrative.
+- **For longer or multi-turn sessions**, same 2–4 sentence narrative; link
+  the transcript if one's available, but summarize the *intent* in your own
+  words rather than dumping the back-and-forth.
+- **Don't speculate about context you weren't given.** Narrate only what was
+  actually communicated; if you're uncertain about intent, say so plainly —
+  don't invent a justification.
+
+### Every commit carries a `Prompt-Origin:` trailer
+
+**Fleet-wide.** Mirrors the PR's Origin section in compressed form — same
+third-person past-tense narrative, one or two sentences, no verbatim quoting.
+The PR description is the human-readable record; the commit trailer is the
+durable, `git log`-greppable one. Both should agree.
+
+```text
+<imperative summary line>
+
+<short body: what changed and why>
+
+Prompt-Origin: |
+  Chris asked for <the request in third-person past-tense — intent and the
+  constraints they specified, one or two sentences, no verbatim quote>.
+Co-Authored-By: Claude <model> <noreply@anthropic.com>
+```
 
 ### Auto-merge arming (per-PR)
 

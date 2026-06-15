@@ -92,6 +92,16 @@ jobs:
                "Generated with Claude" / "Co-authored with Claude" disclosure
                at the top of that section (commit trailers alone are not
                enough — this is Chris's operator-not-SWE convention).
+            5. ORIGIN SECTION — fleet-wide, every PitziLabs repo: the PR body
+               must open with an `## Origin` section — a third-person
+               past-tense narrative of who asked for the change and what they
+               wanted (not a verbatim prompt dump). Inspect the body from the
+               `gh pr view` call above. Flag if the `## Origin` heading is
+               absent, or if it just quotes the prompt verbatim instead of
+               narrating intent. The matching `Prompt-Origin:` commit trailer
+               is the durable mirror — optionally spot-check it via
+               `gh pr view --json commits`, but the body section is the
+               required artifact.
 
             Rules:
             - Only comment on actual problems or meaningful improvements
