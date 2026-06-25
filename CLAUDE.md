@@ -105,50 +105,44 @@ The title matches or clearly refines the title of the issue the PR closes.
 ### PR body
 
 The body includes `Closes #<number>` (or `Fixes #<number>` / `Resolves
-#<number>`) so merging closes the issue. Plus a short summary of what
-changed and why, and an `## Origin` section (below).
+#<number>`) so merging closes the issue, plus a summary of what changed and
+why.
 
-### Every PR opens with an `## Origin` section
+### Write the summary in a neutral, professional voice
 
-**Fleet-wide — every PitziLabs repo.** Immediately after the one-line
-summary, the PR body opens with an `## Origin` section disclosing how the
-change came about: the durable record of what was asked for, written in
-**third-person past-tense narrative** referring to the requester by name
-(e.g. "Chris wanted X…").
+**Fleet-wide — every PitziLabs repo.** The PR archive is read months later by
+reviewers (and future Chris) who weren't in the session, so the summary has to
+stand on its own. Write it in a **neutral, objective, reader-focused,
+action-oriented** voice — describe the change and its rationale as facts, not
+as a story about the session.
 
-Treat the prompts you receive as raw material, not the artifact itself — the
-PR archive is read months later by reviewers (and future Chris) who weren't
-in the session, and a terse verbatim "make X work" reads as noise out of
-context. A 2–4 sentence narrative translates the moment into a durable record.
+Cover the **who, what, and why** woven into the summary, not as a separate
+section:
 
-- **Lead with the requester and what they wanted**, e.g. "Chris wanted the
-  kiosk to surface household presence so the monitor reflects who's home."
-- **Include the substantive constraints** they specified and any trade-offs
-  they flagged or accepted.
-- **Don't quote the prompt verbatim**, even when it's short — translate to
-  narrative.
-- **For longer or multi-turn sessions**, same 2–4 sentence narrative; link
-  the transcript if one's available, but summarize the *intent* in your own
-  words rather than dumping the back-and-forth.
-- **Don't speculate about context you weren't given.** Narrate only what was
-  actually communicated; if you're uncertain about intent, say so plainly —
-  don't invent a justification.
+- **Lead with what the change does and why it's needed**, e.g. "Adds
+  household-presence tiles to the kiosk dashboard so the wall monitor shows
+  who's home at a glance."
+- **State the motivation and any constraints** plainly — the problem it solves,
+  what was requested, and the trade-offs flagged or accepted.
+- **Don't quote prompts verbatim and don't narrate the session.** No
+  third-person "X wanted…" storytelling and no `## Origin` section; translate
+  intent into an objective description of the change and its purpose.
+- **Don't speculate about context you weren't given.** Describe only what was
+  actually communicated; if intent is genuinely uncertain, say so plainly
+  rather than inventing a justification.
 
-### Every commit carries a `Prompt-Origin:` trailer
+### Commit messages
 
-**Fleet-wide.** Mirrors the PR's Origin section in compressed form — same
-third-person past-tense narrative, one or two sentences, no verbatim quoting.
-The PR description is the human-readable record; the commit trailer is the
-durable, `git log`-greppable one. Both should agree.
+A standard commit: an imperative summary line, a short body explaining what
+changed and why, and a `Co-Authored-By:` trailer — nothing more. The who/what/
+why lives in the PR body, which becomes the squash-merge commit message, so
+commits don't carry a separate provenance trailer.
 
 ```text
 <imperative summary line>
 
 <short body: what changed and why>
 
-Prompt-Origin: |
-  Chris asked for <the request in third-person past-tense — intent and the
-  constraints they specified, one or two sentences, no verbatim quote>.
 Co-Authored-By: Claude <model> <noreply@anthropic.com>
 ```
 
