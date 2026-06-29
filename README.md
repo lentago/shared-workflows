@@ -1,6 +1,6 @@
 # shared-workflows
 
-Reusable GitHub Actions workflows for PitziLabs repositories.
+Reusable GitHub Actions workflows for Lentago Labs repositories.
 
 **Authorship:** The workflows and documentation in this repo are co-written with [Claude](https://claude.ai) (Anthropic). I direct the work and review the output; Claude writes the YAML. I'm an infrastructure operator, not a software engineer — please don't read this repo as a portfolio of coding ability.
 
@@ -28,7 +28,7 @@ on:
 
 jobs:
   claude:
-    uses: PitziLabs/shared-workflows/.github/workflows/claude-responder.yml@main
+    uses: lentago/shared-workflows/.github/workflows/claude-responder.yml@main
     secrets: inherit
     with:
       allowed_tools: '"Bash(git add:*)" "Bash(git commit:*)" "Read" "Edit" "Write"'
@@ -59,7 +59,7 @@ on:
 
 jobs:
   claude-review:
-    uses: PitziLabs/shared-workflows/.github/workflows/claude-review.yml@main
+    uses: lentago/shared-workflows/.github/workflows/claude-review.yml@main
     secrets: inherit
     with:
       review_prompt: |
@@ -83,7 +83,7 @@ on:
 
 jobs:
   shellcheck:
-    uses: PitziLabs/shared-workflows/.github/workflows/shellcheck.yml@main
+    uses: lentago/shared-workflows/.github/workflows/shellcheck.yml@main
     with:
       scripts: |
         deploy.sh
