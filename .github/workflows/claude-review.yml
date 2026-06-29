@@ -71,7 +71,7 @@ jobs:
             ${{ inputs.review_prompt }}
 
             Fleet PR-workflow checks (flag PRs that violate any of these — these
-            mirror the canonical rules in PitziLabs/shared-workflows CLAUDE.md
+            mirror the canonical rules in lentago/shared-workflows CLAUDE.md
             "Fleet PR-workflow (canonical source)"; treat each as a review item):
 
             1. ISSUE LINK — the PR body must contain `Closes #<n>`, `Fixes
@@ -123,6 +123,6 @@ jobs:
 
       - name: Render execution to step summary
         if: always() && steps.claude.outputs.execution_file != ''
-        uses: PitziLabs/shared-workflows/.github/actions/render-claude-summary@main
+        uses: lentago/shared-workflows/.github/actions/render-claude-summary@main
         with:
           execution_file: ${{ steps.claude.outputs.execution_file }}
