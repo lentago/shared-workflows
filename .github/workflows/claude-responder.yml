@@ -90,6 +90,6 @@ jobs:
 
       - name: Render execution to step summary
         if: always() && steps.claude.outputs.execution_file != ''
-        uses: PitziLabs/shared-workflows/.github/actions/render-claude-summary@main
+        uses: lentago/shared-workflows/.github/actions/render-claude-summary@main
         with:
           execution_file: ${{ steps.claude.outputs.execution_file }}
