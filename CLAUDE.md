@@ -20,13 +20,13 @@ One sentence is plenty; don't make a meal of it.
 
 ## What this repo is
 
-Three reusable GitHub Actions workflows that the PitziLabs fleet calls via
-`uses: PitziLabs/shared-workflows/.github/workflows/<name>.yml@main`:
+Three reusable GitHub Actions workflows that the Lentago Labs fleet calls via
+`uses: lentago/shared-workflows/.github/workflows/<name>.yml@main`:
 
 | Workflow | Purpose | Callers (current) |
 |---|---|---|
-| `claude-responder.yml` | Interactive `@claude` mentions on issues/PRs; model routed by `model:opus|sonnet|haiku` label | every PitziLabs repo |
-| `claude-review.yml` | Automated Haiku PR review with caller-supplied focus block | every PitziLabs repo |
+| `claude-responder.yml` | Interactive `@claude` mentions on issues/PRs; model routed by `model:opus|sonnet|haiku` label | every Lentago Labs repo |
+| `claude-review.yml` | Automated Haiku PR review with caller-supplied focus block | every Lentago Labs repo |
 | `shellcheck.yml` | ShellCheck on `.sh` files, explicit list or repo-wide auto-discovery | repos with bash (`firewalla-axiom-pipeline`, `homelab-observability`, `workstation-bootstrap`) |
 
 ## Architecture / load-bearing knowledge
@@ -79,8 +79,8 @@ repo secrets store, passed through transparently.
 
 ## Fleet PR-workflow (canonical source)
 
-> This section is the **single source of truth** for the PitziLabs fleet's
-> PR-workflow conventions. It governs every PitziLabs repo. Two mirrors
+> This section is the **single source of truth** for the Lentago Labs fleet's
+> PR-workflow conventions. It governs every Lentago Labs repo. Two mirrors
 > exist for reach:
 >
 > 1. `~/repos/CLAUDE.md` carries a copy so local Claude Code sessions pick
@@ -110,7 +110,7 @@ why.
 
 ### Write the summary in a neutral, professional voice
 
-**Fleet-wide — every PitziLabs repo.** The PR archive is read months later by
+**Fleet-wide — every Lentago Labs repo.** The PR archive is read months later by
 reviewers (and future Chris) who weren't in the session, so the summary has to
 stand on its own. Write it in a **neutral, objective, reader-focused,
 action-oriented** voice — describe the change and its rationale as facts, not
