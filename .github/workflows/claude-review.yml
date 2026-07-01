@@ -8,6 +8,12 @@
 #
 # Pinned to Haiku by default — review is mechanical pattern-matching.
 #
+# Advisory / non-blocking: the review step is continue-on-error and the job
+# always exits 0, so a transient API failure or turn-budget exhaustion never
+# reds the check or blocks auto-merge. If the review can't complete, a neutral
+# soft-fail comment is posted instead. max_turns defaults high enough that a
+# normal review finishes before the cap.
+#
 # SYNC OBLIGATION: the "Fleet PR-workflow checks" block in the prompt below
 # mirrors the canonical "Fleet PR-workflow (canonical source)" section in
 # this repo's CLAUDE.md. If you edit one, edit the other. Keep them
@@ -29,9 +35,9 @@ on:
         type: string
         default: "haiku"
       max_turns:
-        description: "Max agent turns"
+        description: "Max agent turns. Default is generous so a normal review completes before the cap (a too-tight cap made the reviewer exit non-zero before posting)."
         type: number
-        default: 15
+        default: 40
       allowed_bots:
         description: "Value for the action's allowed_bots input. Defaults to \"*\" so the fleet's runner-bot PRs are reviewed (every fleet PR is opened by pitzilabs-claude-runner[bot]); pass a specific login to narrow, or \"\" to disable bot reviews entirely."
         type: string
@@ -58,6 +64,7 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -120,6 +127,15 @@ jobs:
             --max-turns ${{ inputs.max_turns }}
             --model ${{ inputs.model }}
             --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Read"
+
+      - name: Post soft-fail notice if review could not complete
+        if: always() && steps.claude.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --body "⚠️ The automated Claude review could not complete this run (transient API or turn-budget issue). This check is **advisory and non-blocking** — the merge is not gated on it. A human review is advised if the change is substantive."
 
       - name: Render execution to step summary
         if: always() && steps.claude.outputs.execution_file != ''

@@ -45,6 +45,13 @@ Automated PR review pinned to Haiku. Caller passes a focus block describing
 the repo and what to look for; the reusable workflow wraps it with the common
 PR-context header, rules, and output-format scaffolding.
 
+The review is **advisory and non-blocking**: the review step runs
+`continue-on-error` and the job always exits `0`, so a transient API failure
+or turn-budget exhaustion never reds the check or blocks auto-merge — if the
+review can't complete, a neutral soft-fail comment is posted instead. Optional
+inputs: `model` (default `haiku`), `max_turns` (default `40`, set high enough
+that a normal review finishes before the cap), `allowed_bots` (default `"*"`).
+
 ```yaml
 name: Claude Code Review
 
