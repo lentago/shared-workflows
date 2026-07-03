@@ -194,3 +194,40 @@ trailer. Commit messages also carry the `Co-Authored-By: Claude` trailer.
 - **Branding consistency** — when a README pattern, badge set, or
   attribution footer becomes the standard, propagate via PR (not direct
   push) so each repo has a record of the change.
+
+## Live-state vs. code discipline (canonical source)
+
+> Mirrored in `~/repos/CLAUDE.md` for local sessions — keep the two in
+> sync, same obligation as the PR-workflow mirror above.
+
+Several Lentago Labs systems continuously **enforce state from git via a
+CI apply job**: whatever is on `main` *is* the live state, and the apply
+can be triggered by a completely unrelated merge.
+
+Known enforced surfaces (extend this list when a new one ships):
+
+| Live surface | Owning repo / mechanism |
+|---|---|
+| Grafana Cloud dashboards | `homelab-observability` — terraform workflow applies `dashboards/*.json` on **every merge to main** |
+| Route 53 / `lentago.dev` DNS | `lentagolabs-dev` Terraform — never console-edit |
+| GitHub repo settings & rulesets | `.github` meta-repo — `fleet-ops/fleet-apply.sh` |
+| Central Alloy config (LXC 105) | `homelab-observability` — `alloy-gitops.timer` pulls `main` every 5 min |
+
+Rules:
+
+1. **Never mutate an enforced surface live** (UI, HTTP API, MCP tool)
+   without codifying the identical change in the owning repo **in the
+   same session** — PR opened and auto-merge armed. A live-only edit
+   survives exactly until the next apply.
+2. **Live-ahead-of-repo state is a fire, not a curiosity.** If live
+   state doesn't match the repo (e.g. dashboard panels absent from the
+   JSON), someone's un-codified work is one merge away from destruction:
+   recover it into a PR *before* merging anything else to that repo.
+3. Systems usually keep a recovery trail (Grafana dashboard version
+   history, Route 53 change log, ruleset audit log) — check it before
+   declaring live-only work lost.
+
+Origin: 2026-07-03 — an infra-health dashboard revamp pushed live via
+the Grafana API but never committed was silently reverted by the
+terraform applies of five unrelated bug-fix merges
+(`homelab-observability#119` restored it from version history).
