@@ -39,7 +39,7 @@ on:
         type: number
         default: 40
       allowed_bots:
-        description: "Value for the action's allowed_bots input. Defaults to \"*\" so the fleet's runner-bot PRs are reviewed (every fleet PR is opened by pitzilabs-claude-runner[bot]); pass a specific login to narrow, or \"\" to disable bot reviews entirely."
+        description: "Value for the action's allowed_bots input. Defaults to \"*\" so the fleet's runner-bot PRs are reviewed (every fleet PR is opened by lentago-claude-runner[bot]); pass a specific login to narrow, or \"\" to disable bot reviews entirely."
         type: string
         default: "*"
     secrets:
@@ -99,7 +99,7 @@ jobs:
                "Generated with Claude" / "Co-authored with Claude" disclosure
                at the top of that section (commit trailers alone are not
                enough — this is Chris's operator-not-SWE convention).
-            5. PR SUMMARY — fleet-wide, every PitziLabs repo: the PR body must
+            5. PR SUMMARY — fleet-wide, every lentago repo: the PR body must
                carry a summary conveying the who/what/why of the change — what
                it does, the motivation behind it, and the substantive
                constraints — in a neutral, objective, professional voice.
