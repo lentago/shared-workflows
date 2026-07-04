@@ -27,7 +27,7 @@ Three reusable GitHub Actions workflows that the Lentago Labs fleet calls via
 |---|---|---|
 | `claude-responder.yml` | Interactive `@claude` mentions on issues/PRs; model routed by `model:opus|sonnet|haiku` label | every Lentago Labs repo |
 | `claude-review.yml` | Automated Haiku PR review with caller-supplied focus block | every Lentago Labs repo |
-| `shellcheck.yml` | ShellCheck on `.sh` files, explicit list or repo-wide auto-discovery | repos with bash (`firewalla-axiom-pipeline`, `homelab-observability`, `workstation-bootstrap`) |
+| `shellcheck.yml` | ShellCheck on `.sh` files, explicit list or repo-wide auto-discovery | repos with bash (`firewalla-axiom-pipeline`, `drosera`, `kalmia`, `workstation-bootstrap`) |
 
 ## Architecture / load-bearing knowledge
 
@@ -208,10 +208,10 @@ Known enforced surfaces (extend this list when a new one ships):
 
 | Live surface | Owning repo / mechanism |
 |---|---|
-| Grafana Cloud dashboards | `homelab-observability` — terraform workflow applies `dashboards/*.json` on **every merge to main** |
+| Grafana Cloud dashboards | `drosera` (née `homelab-observability`) — terraform workflow applies `dashboards/*.json` on **every merge to main** |
 | Route 53 / `lentago.dev` DNS | `lentagolabs-dev` Terraform — never console-edit |
 | GitHub repo settings & rulesets | `.github` meta-repo — `fleet-ops/fleet-apply.sh` |
-| Central Alloy config (LXC 105) | `homelab-observability` — `alloy-gitops.timer` pulls `main` every 5 min |
+| Central Alloy config (LXC 105) | `drosera` (née `homelab-observability`) — `alloy-gitops.timer` pulls `main` every 5 min |
 
 Rules:
 
@@ -230,4 +230,4 @@ Rules:
 Origin: 2026-07-03 — an infra-health dashboard revamp pushed live via
 the Grafana API but never committed was silently reverted by the
 terraform applies of five unrelated bug-fix merges
-(`homelab-observability#119` restored it from version history).
+(`drosera#119` restored it from version history).
