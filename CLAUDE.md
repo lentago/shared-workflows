@@ -208,10 +208,10 @@ Known enforced surfaces (extend this list when a new one ships):
 
 | Live surface | Owning repo / mechanism |
 |---|---|
-| Grafana Cloud dashboards | `drosera` (née `homelab-observability`) — terraform workflow applies `dashboards/*.json` on **every merge to main** |
+| Grafana Cloud dashboards | `drosera` — terraform workflow applies `dashboards/*.json` on **every merge to main** |
 | Route 53 / `lentago.dev` DNS | `site-lentago-dev` (née `lentagolabs-dev`) Terraform — never console-edit |
 | GitHub repo settings & rulesets | `.github` meta-repo — `fleet-ops/fleet-apply.sh` |
-| Central Alloy config (LXC 105) | `drosera` (née `homelab-observability`) — `alloy-gitops.timer` pulls `main` every 5 min |
+| Central Alloy config (LXC 105) | `drosera` — `alloy-gitops.timer` pulls `main` every 5 min |
 
 Rules:
 
