@@ -212,6 +212,7 @@ Known enforced surfaces (extend this list when a new one ships):
 | Route 53 / `lentago.dev` DNS | `site-lentago-dev` (née `lentagolabs-dev`) Terraform — never console-edit |
 | GitHub repo settings & rulesets | `.github` meta-repo — `fleet-ops/fleet-apply.sh` |
 | Central Alloy config (LXC 105) | `drosera` — `alloy-gitops.timer` pulls `main` every 5 min |
+| Proxmox guests on `homelab-cluster` (VM/LXC existence & shape) | `kalmia` — `terraform` workflow applies `terraform/` on **every merge to main**, via the LAN self-hosted runner (LXC 115 `gha-runner`) |
 
 Rules:
 
