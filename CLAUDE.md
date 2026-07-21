@@ -233,3 +233,51 @@ Origin: 2026-07-03 — an infra-health dashboard revamp pushed live via
 the Grafana API but never committed was silently reverted by the
 terraform applies of five unrelated bug-fix merges
 (`drosera#119` restored it from version history).
+
+## Rename discipline (canonical source)
+
+> Mirrored in `~/repos/CLAUDE.md` for local sessions — keep the two in
+> sync, same obligation as the mirrors above.
+
+A rename isn't done when the repo URL changes — it's done when **no
+surface still carries the old name**, or every surface that does is
+owned by an open tracking issue. Renames propagate through four tiers,
+in order of increasing friction:
+
+1. **Repo & docs** — repo name (GitHub redirects cover old URLs),
+   README, CLAUDE.md persona, badges, concept docs.
+2. **Registries & indexes** — fleet inventory in `~/repos/CLAUDE.md`,
+   bullpen `projects/registry.json`, Grafana dashboards/folders, DNS
+   names, memory files.
+3. **Infrastructure-as-code** — terraform resource names and hostnames,
+   ansible role/var/unit/user names, workflow names, OIDC role names,
+   tfstate keys.
+4. **Live runtime** — on-host clone paths, systemd units, service
+   users, container hostnames, cloud resource names.
+
+Rules:
+
+1. **Never bless-and-forget.** "We'll keep the legacy name" is not a
+   resolution. Documenting a legacy name is a *tracking* action — valid
+   only alongside an open issue in the owning repo that owns completing
+   the rename. Closing that issue with "documented, keeping legacy" is
+   exactly what this rule forbids.
+2. **Tiers 1–2 rename in the same session as the rename itself.**
+   They're low-risk and reversible; there is no reason to defer them.
+3. **Tiers 3–4 may be deferred, never dropped.** They usually need live
+   migration (unit stop/rename, state moves, replays, dual-trust
+   windows). Defer them into the tracking issue with a concrete
+   execution plan and constraints; the issue stays open until live
+   state matches the new name.
+4. **Runtime renames follow the live-state discipline** (above):
+   codify in the owning repo and apply/replay to live in the same
+   effort — never live-rename without codifying.
+
+Origin: 2026-07-21 — the day after the lunaria → brasenia product
+rename, kalmia#61 was resolved by *blessing* the legacy runtime names,
+following the then-precedent from the 2026-07-04 rebrand wave. The
+policy was reversed the same morning. Grandfathered debt from that era,
+now tracked: kalmia#63 (lunaria runtime), betula#89 (on-device clone
+path), drosera#169 (OIDC role / tfstate key / on-host paths),
+claytonia#65 (on-host bullpen names), solidago#142 (AWS `foundry-*`
+resources).
