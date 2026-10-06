@@ -228,6 +228,8 @@ Known enforced surfaces (extend this list when a new one ships):
 | Central Alloy config (LXC 105) | `drosera` — `alloy-gitops.timer` pulls `main` every 5 min |
 | Proxmox guests on `homelab-cluster` (VM/LXC existence & shape) — all except the bullpen runner pool — plus the cluster vzdump backup jobs (kalmia#30) | `kalmia` — `terraform` workflow applies `terraform/` on **every merge to main**, via the LAN self-hosted runner (LXC 115 `gha-runner`) |
 | Proxmox guests — the bullpen runner pool (LXC 110–112, 116–117 in the `claytonia` PVE pool) | `claytonia` — `terraform` workflow applies `terraform/` on **every merge to main**, via a second LAN self-hosted runner agent on LXC 115 `gha-runner` (adopted from kalmia 2026-07-07, claytonia#51/kalmia#37) |
+| Axiom datasets + retention (betula's archive plane: `cjp-solidago-*`) | `betula` — `terraform` workflow applies `terraform/` on **every merge to main** (plan-on-PR + `gate`; live 2026-10-06, betula#118). Datasets carry `prevent_destroy`; tokens are not yet managed (betula#119) |
+| Firewalla on-box config — Fluent Bit conf, `user_crontab`, collector scripts (incl. the `device_inventory` collector) | `betula` — on-device `gitops-sync.sh` pulls `main` every 5 min and applies (crontab via `update_crontab.sh`, never a raw `crontab` install) |
 
 Rules:
 
