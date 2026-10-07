@@ -2,7 +2,7 @@
      Regenerate there; do not hand-edit the banner or badge URLs. -->
 <a href="https://lentago.dev"><img src="./assets/banner.svg" alt="shared-workflows — Reusable CI · the fleet's canonical workflows" width="100%"></a>
 
-[![main](https://img.shields.io/github/check-runs/lentago/shared-workflows/main?style=flat-square&labelColor=0e2b1a&color=1b4b2e&label=main)](https://github.com/lentago/shared-workflows/actions) [![License](https://img.shields.io/github/license/lentago/shared-workflows?style=flat-square&labelColor=0e2b1a&color=1b4b2e)](https://github.com/lentago/shared-workflows/blob/main/LICENSE) [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-1b4b2e?style=flat-square&labelColor=0e2b1a&logo=readthedocs&logoColor=E0A81C)](https://deepwiki.com/lentago/shared-workflows) [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/lentago/shared-workflows?style=flat-square&labelColor=0e2b1a&color=1b4b2e&label=scorecard)](https://scorecard.dev/viewer/?uri=github.com/lentago/shared-workflows)
+[![main](https://img.shields.io/github/check-runs/lentago/shared-workflows/main?style=flat-square&labelColor=0e2b1a&color=1b4b2e&label=main)](https://github.com/lentago/shared-workflows/actions) [![License](https://img.shields.io/github/license/lentago/shared-workflows?style=flat-square&labelColor=0e2b1a&color=1b4b2e)](https://github.com/lentago/shared-workflows/blob/main/LICENSE) [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/lentago/shared-workflows?style=flat-square&labelColor=0e2b1a&color=1b4b2e&label=scorecard)](https://scorecard.dev/viewer/?uri=github.com/lentago/shared-workflows)
 
 ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-1b4b2e?style=flat-square&labelColor=0e2b1a&logo=githubactions&logoColor=E0A81C) ![Claude](https://img.shields.io/badge/Claude-1b4b2e?style=flat-square&labelColor=0e2b1a&logo=anthropic&logoColor=E0A81C) ![YAML](https://img.shields.io/badge/YAML-1b4b2e?style=flat-square&labelColor=0e2b1a&logo=yaml&logoColor=E0A81C)
 
@@ -21,22 +21,6 @@ the enterprise rhyme is a central pipeline library.
 **Authorship:** The workflows and documentation in this repo are co-written with [Claude](https://claude.ai) (Anthropic). I direct the work and review the output; Claude writes the YAML. I'm an infrastructure operator, not a software engineer — please don't read this repo as a portfolio of coding ability.
 
 **Architecture decisions:** [`docs/adr/`](docs/adr/) records the reasoning behind this repo's structural choices — canonical policy placement, the `@main`→semver-tag migration, the advisory review gate, backwards-compatible contracts.
-
-## 📚 Ask this codebase (DeepWiki)
-
-<a href="https://deepwiki.com/lentago/shared-workflows"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" height="32"></a>
-
-> [DeepWiki](https://deepwiki.com/lentago/shared-workflows) maintains an AI-generated wiki over this
-> repository — architecture pages, diagrams, and a Q&A box grounded in the actual code. Every
-> public Lentago Labs repo is indexed ([deepwiki.com/lentago](https://deepwiki.com/lentago));
-> it is the fastest way to orient before reading source. It is AI-generated: trust it to orient
-> you, verify against the code before you act on it.
-
-**Good first questions:**
-
-- How does the `claude-responder.yml` workflow route between opus, sonnet, and haiku models, and who can trigger it?
-- What does `docs-check.yml` do differently from a simple link-checker, and why must callers omit the `paths:` filter?
-- Why is the Claude PR review in `claude-review.yml` advisory/non-blocking instead of a required status check?
 
 ## 🧭 What this repo demonstrates
 
@@ -426,5 +410,4 @@ rules into `claude-review.yml`'s prompt as machine-checked review criteria.
 > 🌱 **Lentago Labs** is a pro-bono operations practice for organizations that
 > run on volunteers, donations, and one overworked tech person. Everything here
 > is free to take, and we practice what we publish: our own estate runs this
-> way, in the open. Start at the [org profile](https://github.com/lentago), and
-> read this repo on [DeepWiki](https://deepwiki.com/lentago/shared-workflows).
+> way, in the open. Start at the [org profile](https://github.com/lentago).
