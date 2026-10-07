@@ -90,6 +90,6 @@ jobs:
 
       - name: Render execution to step summary
         if: always() && steps.claude.outputs.execution_file != ''
-        uses: lentago/shared-workflows/.github/actions/render-claude-summary@v1.2.2
+        uses: lentago/shared-workflows/.github/actions/render-claude-summary@v1.3.0
         with:
           execution_file: ${{ steps.claude.outputs.execution_file }}

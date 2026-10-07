@@ -5,7 +5,7 @@
 Releases are cut per [RELEASING.md](RELEASING.md); callers pin to immutable
 semver tags.
 
-## v1.3.0 (unreleased)
+## v1.3.0 (2026-10-07)
 
 ### Added
 
