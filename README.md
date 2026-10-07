@@ -315,6 +315,7 @@ jobs:
 | `fetch_depth` | no | `1` | Git fetch depth (`0` = full history; required for Starlight `lastUpdated`) |
 | `pre_build_command` | no | `""` | Shell command run after `npm ci` and before `npm run build` (e.g. a Python content-sync script) |
 | `build_env_vars` | no | `""` | Newline-separated `KEY=VALUE` pairs exported as env vars for the build step (e.g. `PUBLIC_ASK_ENDPOINT=${{ vars.PUBLIC_ASK_ENDPOINT }}`) |
+| `version_file` | no | `public/version.json` | Path of a JSON file (`sha`, `repo`, `built_at`, `run_url`) written after checkout and before the pre-build command and build, so the site serves the deployed commit at `/version.json`. Empty disables |
 | `attest` | no | `true` | Attest the pushed image with `actions/attest-build-provenance` |
 
 **Site-specific examples:**

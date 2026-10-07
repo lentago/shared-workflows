@@ -13,6 +13,13 @@
 #
 # Authenticates via OIDC; no long-lived AWS credentials required.
 #
+# Version file: right after checkout (before any pre-build command) the
+# workflow writes `version_file` (default public/version.json) containing
+# {sha, repo, built_at, run_url}. Astro copies public/ verbatim, so the site
+# serves it at /version.json and a probe can compare the live commit with
+# `main`. Point `version_file` at another path if the site's public directory
+# differs; set it to "" to disable the step.
+#
 # Required caller permissions (workflow-level or job-level):
 #   id-token: write     — OIDC for AWS auth and attestation signing
 #   contents: read      — standard repository checkout
@@ -65,6 +72,10 @@ on:
         description: "Newline-separated KEY=VALUE pairs exported as environment variables before npm run build"
         type: string
         default: ""
+      version_file:
+        description: "Path of the JSON file recording the deployed commit, written after checkout and before the build (default public/version.json is served at /version.json); empty disables"
+        type: string
+        default: "public/version.json"
       attest:
         description: "Attest the pushed image with actions/attest-build-provenance (SLSA Build L3)"
         type: boolean
@@ -92,6 +103,20 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: ${{ inputs.fetch_depth }}
+
+      - name: Write version file
+        if: inputs.version_file != ''
+        env:
+          VERSION_FILE: ${{ inputs.version_file }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          mkdir -p "$(dirname "$VERSION_FILE")"
+          jq -n --arg sha "$SHA" --arg repo "$REPO" \
+            --arg built_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg run_url "$RUN_URL" \
+            '{sha: $sha, repo: $repo, built_at: $built_at, run_url: $run_url}' > "$VERSION_FILE"
+          cat "$VERSION_FILE"
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
