@@ -31,9 +31,9 @@ on:
         type: string
         default: "sonnet"
       max_turns:
-        description: "Max agent turns per invocation"
+        description: "Max agent turns per invocation; a runaway guard, not a budget. 46 turns was a normal issue-reading task on claytonia (#72), so the default is set well above that"
         type: number
-        default: 40
+        default: 80
       allowed_tools:
         description: "Value passed to --allowedTools (raw, including quotes)"
         type: string
@@ -107,6 +107,6 @@ jobs:
 
       - name: Render execution to step summary
         if: always() && steps.claude.outputs.execution_file != ''
-        uses: lentago/shared-workflows/.github/actions/render-claude-summary@v1.3.1
+        uses: lentago/shared-workflows/.github/actions/render-claude-summary@v1.4.0
         with:
           execution_file: ${{ steps.claude.outputs.execution_file }}

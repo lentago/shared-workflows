@@ -5,6 +5,21 @@
 Releases are cut per [RELEASING.md](RELEASING.md); callers pin to immutable
 semver tags.
 
+## v1.4.0 (2026-10-13)
+
+### Changed
+
+- `claude-responder.yml`: the `max_turns` default rises from 40 to 80. The cap
+  is a runaway guard, but at 40 it failed runs that had already finished their
+  work: `claude-code-action` reports "Claude reported a successful result after
+  46 turns, exceeding the configured maximum of 40" and the run goes red after
+  the comment or branch is already posted (lentago/claytonia#139 and #140 on
+  2026-10-13; see #72). 46 turns was a normal issue-reading task, so 80 leaves
+  room for one while still stopping a session that never converges. Callers that
+  want the old cap set `max_turns: 40`. Minor, not patch: a default changed, and
+  the only effect for callers on the default is that longer runs are allowed.
+- Internal `render-claude-summary` refs point at `v1.4.0`.
+
 ## v1.3.1 (2026-10-13)
 
 ### Fixed
