@@ -4,7 +4,17 @@
 # Reusable workflow for the @claude interactive responder. Callers wire up
 # `on:` triggers (issue_comment, issues, pull_request*) and pass repo-specific
 # inputs; this workflow handles label-based model routing, the @claude mention
-# predicate, and the action invocation.
+# predicate, the actor gate, and the action invocation.
+#
+# Actor gate: a bot-authored event (CodeRabbit's review comments are the common
+# case) used to start the job only for claude-code-action to refuse it
+# ("Workflow initiated by non-human actor"), leaving a red `claude / claude`
+# check that meant nothing. The job's `if:` skips those events instead, so the
+# check reads skipped. Its allow-list mirrors the action's own matching: `*`
+# allows every bot; otherwise the sender's login must appear in
+# `allowed_bots`, with or without its `[bot]` suffix (contains() is
+# case-insensitive, like the action). A multi-entry list is passed through
+# untouched, since expressions cannot split it, and the action still decides.
 #
 # Label routing: `model:opus`, `model:sonnet`, `model:haiku` on the issue or
 # PR override the caller-specified default_model. Apply the label to
@@ -37,7 +47,7 @@ on:
         type: string
         default: "64000"
       allowed_bots:
-        description: "Value for the action's allowed_bots input"
+        description: "Value for the action's allowed_bots input. One bot name (with or without [bot]) or '*' is also honoured by the job-level skip gate; a comma-separated list is passed through and the action decides"
         type: string
         default: "github-actions"
     secrets:
@@ -47,11 +57,18 @@ on:
 jobs:
   claude:
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude'))) ||
-      (github.event_name == 'pull_request' && (contains(github.event.pull_request.body, '@claude') || contains(github.event.pull_request.title, '@claude')))
+      (
+        github.event.sender.type != 'Bot' ||
+        inputs.allowed_bots == '*' ||
+        contains(inputs.allowed_bots, ',') ||
+        contains(format(',{0},{0}[bot],', inputs.allowed_bots), format(',{0},', github.event.sender.login))
+      ) && (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude'))) ||
+        (github.event_name == 'pull_request' && (contains(github.event.pull_request.body, '@claude') || contains(github.event.pull_request.title, '@claude')))
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -90,6 +107,6 @@ jobs:
 
       - name: Render execution to step summary
         if: always() && steps.claude.outputs.execution_file != ''
-        uses: lentago/shared-workflows/.github/actions/render-claude-summary@v1.3.0
+        uses: lentago/shared-workflows/.github/actions/render-claude-summary@v1.3.1
         with:
           execution_file: ${{ steps.claude.outputs.execution_file }}
