@@ -47,7 +47,7 @@ on:
         type: string
         default: "64000"
       allowed_bots:
-        description: "Value for the action's allowed_bots input"
+        description: "Value for the action's allowed_bots input. One bot name (with or without [bot]) or '*' is also honoured by the job-level skip gate; a comma-separated list is passed through and the action decides"
         type: string
         default: "github-actions"
     secrets:
