@@ -134,8 +134,9 @@ Cover the **who, what, and why** woven into the summary, not as a separate
 section:
 
 - **Lead with what the change does and why it's needed**, e.g. "Adds
-  per-host reachability tiles to the kiosk dashboard so the wall display shows
-  which hosts are up at a glance."
+  one tile per host to the kiosk dashboard, each showing whether that machine
+  answers a ping, so the wall display shows at a glance which machines can be
+  reached."
 - **State the motivation and any constraints** plainly — the problem it solves,
   what was requested, and the trade-offs flagged or accepted.
 - **Don't quote prompts verbatim and don't narrate the session.** No
