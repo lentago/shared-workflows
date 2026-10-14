@@ -134,8 +134,8 @@ Cover the **who, what, and why** woven into the summary, not as a separate
 section:
 
 - **Lead with what the change does and why it's needed**, e.g. "Adds
-  household-presence tiles to the kiosk dashboard so the wall monitor shows
-  who's home at a glance."
+  per-host reachability tiles to the kiosk dashboard so the wall display shows
+  which hosts are up at a glance."
 - **State the motivation and any constraints** plainly — the problem it solves,
   what was requested, and the trade-offs flagged or accepted.
 - **Don't quote prompts verbatim and don't narrate the session.** No
