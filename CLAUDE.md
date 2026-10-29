@@ -231,6 +231,7 @@ Known enforced surfaces (extend this list when a new one ships):
 | Proxmox guests — the bullpen runner pool (LXC 110–112, 116–117 in the `claytonia` PVE pool) | `claytonia` — `terraform` workflow applies `terraform/` on **every merge to main**, via a second LAN self-hosted runner agent on LXC 115 `gha-runner` (adopted from kalmia 2026-07-07, claytonia#51/kalmia#37) |
 | Axiom datasets + retention (betula's archive plane: `cjp-solidago-*`) | `betula` — `terraform` workflow applies `terraform/` on **every merge to main** (plan-on-PR + `gate`; live 2026-10-06, betula#118). Datasets carry `prevent_destroy`; tokens are not yet managed (betula#119) |
 | Firewalla on-box config — Fluent Bit conf, `user_crontab`, collector scripts (incl. the `device_inventory` collector) | `betula` — on-device `gitops-sync.sh` pulls `main` every 5 min and applies (crontab via `update_crontab.sh`, never a raw `crontab` install) |
+| A private personal repo's wiki site on the LAN webserver, plus two wall-display panes it renews | that repo's `publish` workflow rebuilds and mirrors the site and renews both panes on **every merge to main**, via a dedicated LAN self-hosted runner (LXC 123 `pe-publish`, kalmia#191; live 2026-10-29) |
 
 Rules:
 
