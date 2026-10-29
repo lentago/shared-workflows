@@ -16,6 +16,19 @@ which records the decision to move from `@main` to immutable semver tags.
   before landing on `main`. This is the test-before-publishing discipline from
   [CLAUDE.md](CLAUDE.md); a release does not substitute for it.
 
+  **Exception: the `claude-code-action` workflows** (`claude-review.yml`,
+  `claude-responder.yml`). The action refuses to run when the caller's workflow
+  file differs from the default branch's copy, so a caller PR that repins to a
+  branch ref always self-skips and can't validate anything. For these, validate
+  immediately *after* tagging instead:
+  1. Repin one caller on its `main`. Its PR is reviewed locally, because it
+     self-skips.
+  2. Open a throwaway PR in that repo and confirm the workflow does what the
+     release claims.
+  3. If it doesn't, cut a patch release before repinning any other caller.
+
+  The release PR records who runs that check.
+
 ## Semver policy for reusable workflows
 
 **What counts as a breaking change (major bump):**

@@ -19,7 +19,9 @@
 # run produced no review — the action failed, ran out of turns, or skipped
 # itself (claude-code-action skips PRs that change the caller workflow) — that
 # step posts the soft-fail notice instead, so a green check never stands in for
-# a review that didn't happen. (Before v1.5.0 nothing posted the review at all:
+# a review that didn't happen. Draft PRs are skipped at the job level and get
+# neither a review nor a notice. The post step is itself continue-on-error, so
+# a failed post can't redden the check either (ADR-0003). (Before v1.5.0 nothing posted the review at all:
 # it reached only the step summary.)
 #
 # SYNC OBLIGATION: the "Fleet PR-workflow checks" block in the prompt below
@@ -140,7 +142,8 @@ jobs:
             --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Read"
 
       - name: Post the review (or a soft-fail notice)
-        if: always()
+        if: always() && !cancelled()
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -151,22 +154,35 @@ jobs:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
         run: |
           python3 - <<'PYEOF'
-          import json, os
-          path = os.environ.get("EXECUTION_FILE", "")
+          import json, os, re
+          MAX = 60000  # GitHub caps a comment body at 65,536 characters
           result = ""
-          if path and os.path.isfile(path):
-              raw = open(path).read().strip()
-              try:
-                  data = json.loads(raw) if raw else []
-              except json.JSONDecodeError:
-                  data = [json.loads(l) for l in raw.splitlines() if l.strip()]
-              if isinstance(data, dict):
-                  data = data.get("messages") or data.get("events") or []
-              for m in reversed(data if isinstance(data, list) else []):
-                  if isinstance(m, dict) and m.get("type") == "result":
-                      if not m.get("is_error") and m.get("subtype") == "success":
-                          result = (m.get("result") or "").strip()
-                      break
+          try:
+              path = os.environ.get("EXECUTION_FILE", "")
+              if path and os.path.isfile(path):
+                  raw = open(path).read().strip()
+                  try:
+                      data = json.loads(raw) if raw else []
+                  except json.JSONDecodeError:
+                      data = []
+                      for line in raw.splitlines():
+                          try:
+                              data.append(json.loads(line))
+                          except json.JSONDecodeError:
+                              pass
+                  if isinstance(data, dict):
+                      data = data.get("messages") or data.get("events") or []
+                  for m in reversed(data if isinstance(data, list) else []):
+                      if isinstance(m, dict) and m.get("type") == "result":
+                          if not m.get("is_error") and m.get("subtype") == "success":
+                              result = str(m.get("result") or "").strip()
+                          break
+          except Exception:
+              result = ""  # any parse problem falls through to the notice
+          # Don't let review text ping people: break every @mention.
+          result = re.sub(r"(?<![\w`])@(?=[A-Za-z0-9-])", "@\u200b", result)
+          if len(result) > MAX:
+              result = result[:MAX] + "\n\n…(truncated; the full review is in this run's step summary)"
           model, run = os.environ["MODEL"], os.environ["RUN_ID"]
           marker = f"<!-- claude-review run={run} model={model} -->"
           if result:

@@ -7,31 +7,36 @@ semver tags.
 
 ## v1.5.0 (2026-10-29)
 
-### Fixed
-
-- `claude-review.yml` now posts the review. Since the workflow was added in
-  April, the model ran with only `gh pr diff`, `gh pr view` and `Read`, which is
-  correct for a reviewer, but nothing posted its answer. Every review reached the
-  job's step summary and never the PR. A new step, "Post the review (or a
-  soft-fail notice)", reads the run's final result from the execution file and
-  posts it as one PR comment headed `Review (<model>, claude-review.yml)`, with
-  a hidden `<!-- claude-review run=… model=… -->` marker. The model stays
-  read-only.
-- The soft-fail notice now covers every run that produced no review, not only a
-  failed action step: turn exhaustion, an error result, and
-  `claude-code-action`'s silent self-skip on PRs that change the caller
-  workflow. Before, a skipped or result-less run was a green check with nothing
-  posted. The notice says plainly that it is not a review (lentago/.github
-  ADR-0013's arming rule).
-
 ### Changed
 
+- **`claude-review.yml` now posts the review (fixes #80).** Since the workflow
+  was added in April, the model ran with only `gh pr diff`, `gh pr view` and
+  `Read`, which is correct for a reviewer, but nothing posted its answer. Every
+  review reached the job's step summary and never the PR.
+  - A new step, "Post the review (or a soft-fail notice)", reads the run's final
+    result from the execution file and posts it as one PR comment headed
+    `Review (<model>, claude-review.yml)`, with a hidden
+    `<!-- claude-review run=… model=… -->` marker.
+  - The model stays read-only. Its `@mentions` are defused so a review can't
+    ping anyone.
+  - Bodies over 60,000 characters are truncated, below GitHub's 65,536 cap.
+  - The step is `continue-on-error` and skips cancelled runs, so a failed post
+    never reddens the check (ADR-0003).
+- **The soft-fail notice now covers every run that produced no review,** not
+  only a failed action step: turn exhaustion, an error result, an unreadable
+  execution file, and `claude-code-action`'s silent self-skip on PRs that change
+  the caller workflow. Before, a skipped or result-less run was a green check
+  with nothing posted. The notice says plainly that it is not a review
+  (lentago/.github ADR-0013's arming rule). Draft PRs remain skipped at the job
+  level, with no comment.
 - The review prompt's output instructions tell the model that its final message
   is posted verbatim, and that it has no posting tool.
 - Internal `render-claude-summary` refs point at `v1.5.0`.
 
-Minor, not patch: callers on this version start getting a PR comment on every
-review run, where before they got none.
+Minor, not patch: no input, secret or permission changed, but callers on this
+version start receiving a PR comment on every non-draft review run, where before
+they received none. That is a visible behaviour change, which RELEASING.md files
+under minor.
 
 ## v1.4.0 (2026-10-13)
 
