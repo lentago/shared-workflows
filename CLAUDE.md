@@ -163,9 +163,24 @@ Co-Authored-By: Claude <model> <noreply@anthropic.com>
 
 ### Auto-merge arming (per-PR)
 
-Auto-merge arming is per-PR, not a repo-wide default. After opening the
-PR, arm it so the required status checks gate the merge and fire it when
-green:
+Auto-merge arming is per-PR, not a repo-wide default. `--auto` merges the
+moment the required checks are green, so arming *is* the merge decision.
+**Don't arm until the AI review is in and triaged**
+([`.github` ADR-0013](https://github.com/lentago/.github/blob/main/docs/adr/0013-haiku-reviews-every-pr-coderabbit-retires.md)):
+
+- **A review has posted for the PR.** The `claude-review.yml` soft-fail
+  comment ("could not complete") is not a review. Label the PR
+  `re-review` and wait. Commits that only answer review findings don't
+  need a fresh review; any other substantive change pushed after the
+  review does, so label `re-review` again. In a repo with no reviewer
+  caller (the kits and the uvularia demo repos), run the same reviewer
+  locally, read-only, before arming.
+- **Every finding is triaged on the PR.** Each one is either fixed, with
+  the commit named, or declined with a reason.
+
+The review is advisory, never a required status check. This rule is the
+gate. Then arm it so the required status checks gate the merge and fire it
+when green:
 
 - **Local sessions** (gh CLI available):
   ```bash
