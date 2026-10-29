@@ -106,6 +106,11 @@ repo secrets store, passed through transparently.
 > If you edit anything below, also update the matching content in
 > `~/repos/CLAUDE.md` (Pull-request workflow section) and the
 > `review_prompt` block in `claude-review.yml`.
+>
+> One exception: the review-before-arming rule under **Auto-merge arming**
+> has no `review_prompt` counterpart. It governs when an operator arms the
+> PR, which a reviewer reading the PR can't observe. It is mirrored in
+> `~/repos/CLAUDE.md` only.
 
 ### Open a PR — that's the deliverable
 
@@ -173,14 +178,17 @@ moment the required checks are green, so arming *is* the merge decision.
   `re-review` and wait. Commits that only answer review findings don't
   need a fresh review; any other substantive change pushed after the
   review does, so label `re-review` again. In a repo with no reviewer
-  caller (the kits and the uvularia demo repos), run the same reviewer
-  locally, read-only, before arming.
+  caller (ADR-0013 Decision 2: the kits, the uvularia demo repos, and
+  `coderabbit`), run the same reviewer locally, read-only, and post its
+  output on the PR as a comment headed "Review (Haiku, local)". That
+  comment is the review.
 - **Every finding is triaged on the PR.** Each one is either fixed, with
   the commit named, or declined with a reason.
 
 The review is advisory, never a required status check. This rule is the
-gate. Then arm it so the required status checks gate the merge and fire it
-when green:
+*review* gate. The required status checks remain the merge gate (below).
+Once both rules are met, arm it so the required status checks gate the merge
+and fire it when green:
 
 - **Local sessions** (gh CLI available):
   ```bash
