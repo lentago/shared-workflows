@@ -5,6 +5,34 @@
 Releases are cut per [RELEASING.md](RELEASING.md); callers pin to immutable
 semver tags.
 
+## v1.5.0 (2026-10-29)
+
+### Fixed
+
+- `claude-review.yml` now posts the review. Since the workflow was added in
+  April, the model ran with only `gh pr diff`, `gh pr view` and `Read`, which is
+  correct for a reviewer, but nothing posted its answer. Every review reached the
+  job's step summary and never the PR. A new step, "Post the review (or a
+  soft-fail notice)", reads the run's final result from the execution file and
+  posts it as one PR comment headed `Review (<model>, claude-review.yml)`, with
+  a hidden `<!-- claude-review run=… model=… -->` marker. The model stays
+  read-only.
+- The soft-fail notice now covers every run that produced no review, not only a
+  failed action step: turn exhaustion, an error result, and
+  `claude-code-action`'s silent self-skip on PRs that change the caller
+  workflow. Before, a skipped or result-less run was a green check with nothing
+  posted. The notice says plainly that it is not a review (lentago/.github
+  ADR-0013's arming rule).
+
+### Changed
+
+- The review prompt's output instructions tell the model that its final message
+  is posted verbatim, and that it has no posting tool.
+- Internal `render-claude-summary` refs point at `v1.5.0`.
+
+Minor, not patch: callers on this version start getting a PR comment on every
+review run, where before they got none.
+
 ## v1.4.0 (2026-10-13)
 
 ### Changed

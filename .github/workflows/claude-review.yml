@@ -10,9 +10,17 @@
 #
 # Advisory / non-blocking: the review step is continue-on-error and the job
 # always exits 0, so a transient API failure or turn-budget exhaustion never
-# reds the check or blocks auto-merge. If the review can't complete, a neutral
-# soft-fail comment is posted instead. max_turns defaults high enough that a
+# reds the check or blocks auto-merge. max_turns defaults high enough that a
 # normal review finishes before the cap.
+#
+# Posting: the model is read-only (gh pr diff / gh pr view / Read). Its final
+# message IS the review; the "Post the review" step posts it as one PR comment
+# headed "Review (<model>, claude-review.yml)" with a hidden run marker. If the
+# run produced no review — the action failed, ran out of turns, or skipped
+# itself (claude-code-action skips PRs that change the caller workflow) — that
+# step posts the soft-fail notice instead, so a green check never stands in for
+# a review that didn't happen. (Before v1.5.0 nothing posted the review at all:
+# it reached only the step summary.)
 #
 # SYNC OBLIGATION: the "Fleet PR-workflow checks" block in the prompt below
 # mirrors the canonical "Fleet PR-workflow (canonical source)" section in
@@ -121,24 +129,60 @@ jobs:
             Output format:
             - Read the full diff and any source files needed for context
             - Collect ALL findings before producing any output
-            - Return a single consolidated review — do not post comments
-              incrementally as you discover issues
+            - Your final message is posted verbatim as the review comment, so
+              make it the complete review in Markdown: a numbered list with
+              severity (major/minor), file:line, and one or two sentences per
+              finding, or one sentence if nothing significant is wrong
+            - Do not try to post anything yourself — you have no tool for it
           claude_args: |
             --max-turns ${{ inputs.max_turns }}
             --model ${{ inputs.model }}
             --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Read"
 
-      - name: Post soft-fail notice if review could not complete
-        if: always() && steps.claude.outcome == 'failure'
+      - name: Post the review (or a soft-fail notice)
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          MODEL: ${{ inputs.model }}
+          RUN_ID: ${{ github.run_id }}
+          OUTCOME: ${{ steps.claude.outcome }}
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
         run: |
-          gh pr comment "${{ github.event.pull_request.number }}" \
-            --repo "${{ github.repository }}" \
-            --body "⚠️ The automated Claude review could not complete this run (transient API or turn-budget issue). This check is **advisory and non-blocking** — the merge is not gated on it. A human review is advised if the change is substantive."
+          python3 - <<'PYEOF'
+          import json, os
+          path = os.environ.get("EXECUTION_FILE", "")
+          result = ""
+          if path and os.path.isfile(path):
+              raw = open(path).read().strip()
+              try:
+                  data = json.loads(raw) if raw else []
+              except json.JSONDecodeError:
+                  data = [json.loads(l) for l in raw.splitlines() if l.strip()]
+              if isinstance(data, dict):
+                  data = data.get("messages") or data.get("events") or []
+              for m in reversed(data if isinstance(data, list) else []):
+                  if isinstance(m, dict) and m.get("type") == "result":
+                      if not m.get("is_error") and m.get("subtype") == "success":
+                          result = (m.get("result") or "").strip()
+                      break
+          model, run = os.environ["MODEL"], os.environ["RUN_ID"]
+          marker = f"<!-- claude-review run={run} model={model} -->"
+          if result:
+              body = f"{marker}\n## Review ({model}, claude-review.yml)\n\n{result}\n"
+          else:
+              body = (f"{marker}\n⚠️ The automated Claude review could not complete this run "
+                      f"(outcome: {os.environ.get('OUTCOME') or 'unknown'}; a transient API or turn-budget "
+                      "issue, or a PR that changes the reviewer's own workflow). This is **not a review**: "
+                      "label the PR `re-review` to try again, or review it locally before arming "
+                      "(lentago/.github ADR-0013).")
+          open(os.path.join(os.environ["RUNNER_TEMP"], "review-body.md"), "w").write(body)
+          PYEOF
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/review-body.md"
 
       - name: Render execution to step summary
         if: always() && steps.claude.outputs.execution_file != ''
-        uses: lentago/shared-workflows/.github/actions/render-claude-summary@v1.4.0
+        uses: lentago/shared-workflows/.github/actions/render-claude-summary@v1.5.0
         with:
           execution_file: ${{ steps.claude.outputs.execution_file }}
