@@ -318,9 +318,11 @@ Origin: 2026-07-21 — the day after the lunaria → brasenia product
 rename, kalmia#61 was resolved by *blessing* the legacy runtime names,
 following the then-precedent from the 2026-07-04 rebrand wave. The
 policy was reversed the same morning. Grandfathered debt from that era,
-now tracked: kalmia#63 (lunaria runtime), betula#89 (on-device clone
-path), drosera#169 (OIDC role / tfstate key / on-host paths),
-claytonia#65 (on-host bullpen names). solidago's AWS `foundry-*` rename
+now tracked: betula#89 (on-device clone path), drosera#169 (OIDC role /
+tfstate key / on-host paths), claytonia#65 (on-host bullpen names).
+kalmia#63 (lunaria runtime) was paid 2026-10-29: LXC 118 was rebuilt as
+`brasenia` from code (kalmia#211) and the issue closed on live-state
+evidence. solidago's AWS `foundry-*` rename
 was *already complete* when solidago#142 was filed against it on
 2026-07-21 — that ticket was written from a stale fleet-inventory
 premise rather than from live state, and was closed as OBE on
