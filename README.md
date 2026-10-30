@@ -250,10 +250,25 @@ jobs:
 ### `site-deploy.yml`
 
 Reusable Astro-site deployment pipeline: builds the static site, packages
-it into a Docker image, pushes to ECR (`:latest` and `:<sha>` tags), scans
-for vulnerabilities with Trivy, attests the image with
-`actions/attest-build-provenance`, then rolls the ECS service and waits for
-stabilization. Authenticates via OIDC — no long-lived AWS credentials.
+it into a Docker image, pushes to ECR (`:<sha>` tag only), scans for
+vulnerabilities with Trivy, attests the image with
+`actions/attest-build-provenance`, then registers a new ECS task-definition
+revision that names the image by digest, points the service at it, and waits
+for stabilization. Authenticates via OIDC — no long-lived AWS credentials.
+
+**Digest-pinned deploys (v1.6.0+):** each deploy copies the service's current
+task definition into a new revision with the app container's image set to
+`<registry>/<ecr_repo>@<digest>`, the same digest the attestation covers, and
+runs `update-service --task-definition <new revision>`. The app container is
+the one container whose image already points at `<registry>/<ecr_repo>`. Any
+other container, such as a FireLens sidecar, is left as it is. No `:latest` tag
+is written, so the ECR repository can use `IMMUTABLE` tag mutability.
+Task-definition tags are not carried onto the new revision.
+
+**Deploy-role IAM:** `ecs:DescribeServices`, `ecs:DescribeTaskDefinition`,
+`ecs:RegisterTaskDefinition`, `ecs:UpdateService`, `ecr:DescribeImages` (plus
+the usual ECR push actions), and `iam:PassRole` on the task and execution roles
+named in the task definition.
 
 **SLSA Build L3:** building inside a reusable workflow (hosted in a separate
 repository that callers cannot modify) satisfies SLSA Build L3. Attestations
