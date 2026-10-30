@@ -2,8 +2,24 @@
 # Reusable: Astro site → ECR → ECS Fargate (site-deploy.yml)
 # ============================================================================
 # Builds an Astro static site, packages it into an nginx Docker image, pushes
-# to ECR (sha + latest tags), runs a Trivy vulnerability scan, attests the
-# image via actions/attest-build-provenance, then rolls the ECS service.
+# to ECR (sha tag only), runs a Trivy vulnerability scan, attests the image
+# via actions/attest-build-provenance, then registers a new ECS task-definition
+# revision that names the image by digest and rolls the service onto it.
+#
+# Digest-pinned deploys: the pushed image's digest is resolved from ECR, and
+# the service's current task definition is copied into a new revision with
+# the app container's image set to <registry>/<ecr_repo>@<digest>. The app
+# container is the one whose image already points at <registry>/<ecr_repo>
+# (by tag or digest); sidecars such as the FireLens log router are left as
+# they are. No :latest tag is pushed, so the ECR repo can be IMMUTABLE. The
+# :<sha> tag stays as the human-readable handle. The attestation below covers
+# the same digest the running task names.
+#
+# Deploy-role IAM: ecs:DescribeServices, ecs:DescribeTaskDefinition,
+# ecs:RegisterTaskDefinition, ecs:UpdateService, ecr:DescribeImages, and
+# iam:PassRole on the task and execution roles the task definition carries.
+# Task-definition tags are not copied to the new revision (that would also
+# need ecs:TagResource).
 #
 # SLSA Build L3 note: building inside a reusable workflow (rather than a
 # workflow defined in the caller's own repo) satisfies SLSA Build L3, because
@@ -160,11 +176,7 @@ jobs:
           ECR_REPO: ${{ inputs.ecr_repo }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build \
-            -t "$REGISTRY/$ECR_REPO:latest" \
-            -t "$REGISTRY/$ECR_REPO:$IMAGE_TAG" \
-            .
-          docker push "$REGISTRY/$ECR_REPO:latest"
+          docker build -t "$REGISTRY/$ECR_REPO:$IMAGE_TAG" .
           docker push "$REGISTRY/$ECR_REPO:$IMAGE_TAG"
           echo "image=$REGISTRY/$ECR_REPO:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
@@ -178,10 +190,12 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
 
-      - name: Get image digest for attestation
+      # Unconditional: the deploy below pins the task definition to this
+      # digest whether or not the image is attested.
+      - name: Resolve image digest
         id: digest
-        if: inputs.attest
         env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           ECR_REPO: ${{ inputs.ecr_repo }}
           IMAGE_TAG: ${{ github.sha }}
           AWS_REGION: ${{ inputs.aws_region }}
@@ -193,7 +207,12 @@ jobs:
             --query 'imageDetails[0].imageDigest' \
             --output text \
             --no-cli-pager)
+          if [[ "$DIGEST" != sha256:* ]]; then
+            echo "::error::Could not resolve the digest of $ECR_REPO:$IMAGE_TAG (got '$DIGEST')"
+            exit 1
+          fi
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "image=$REGISTRY/$ECR_REPO@$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Attest build provenance
         if: inputs.attest
@@ -203,17 +222,76 @@ jobs:
           subject-digest: ${{ steps.digest.outputs.digest }}
           push-to-registry: false
 
-      - name: Force new ECS deployment
+      - name: Register digest-pinned task definition
+        id: taskdef
         env:
           ECS_CLUSTER: ${{ inputs.ecs_cluster }}
           ECS_SERVICE: ${{ inputs.ecs_service }}
           AWS_REGION: ${{ inputs.aws_region }}
+          REPO_URI: ${{ steps.ecr-login.outputs.registry }}/${{ inputs.ecr_repo }}
+          IMAGE: ${{ steps.digest.outputs.image }}
+        run: |
+          CURRENT=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --region "$AWS_REGION" \
+            --query 'services[0].taskDefinition' \
+            --output text \
+            --no-cli-pager)
+          if [[ "$CURRENT" != arn:* ]]; then
+            echo "::error::Service $ECS_SERVICE not found in cluster $ECS_CLUSTER (got '$CURRENT')"
+            exit 1
+          fi
+          echo "Current task definition: $CURRENT"
+
+          aws ecs describe-task-definition \
+            --task-definition "$CURRENT" \
+            --region "$AWS_REGION" \
+            --query 'taskDefinition' \
+            --output json \
+            --no-cli-pager > current-taskdef.json
+
+          # Exactly one container must pull from this ECR repo; that's the app.
+          MATCHES=$(jq --arg repo "$REPO_URI" \
+            '[.containerDefinitions[] | select(.image | startswith($repo + ":") or startswith($repo + "@"))] | length' \
+            current-taskdef.json)
+          if [[ "$MATCHES" != 1 ]]; then
+            echo "::error::Expected exactly one container with image $REPO_URI in $CURRENT, found $MATCHES"
+            exit 1
+          fi
+
+          # Drop the read-only fields describe returns but register rejects.
+          jq --arg repo "$REPO_URI" --arg image "$IMAGE" '
+            .containerDefinitions |= map(
+              if (.image | startswith($repo + ":") or startswith($repo + "@"))
+              then .image = $image else . end)
+            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+          ' current-taskdef.json > new-taskdef.json
+
+          NEW=$(aws ecs register-task-definition \
+            --cli-input-json file://new-taskdef.json \
+            --region "$AWS_REGION" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text \
+            --no-cli-pager)
+          echo "Registered $NEW with image $IMAGE"
+          echo "arn=$NEW" >> "$GITHUB_OUTPUT"
+
+      - name: Update ECS service
+        env:
+          ECS_CLUSTER: ${{ inputs.ecs_cluster }}
+          ECS_SERVICE: ${{ inputs.ecs_service }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          TASK_DEFINITION: ${{ steps.taskdef.outputs.arn }}
         run: |
           aws ecs update-service \
             --cluster "$ECS_CLUSTER" \
             --service "$ECS_SERVICE" \
-            --force-new-deployment \
+            --task-definition "$TASK_DEFINITION" \
             --region "$AWS_REGION" \
+            --query 'service.taskDefinition' \
+            --output text \
             --no-cli-pager
 
       - name: Wait for deployment to stabilize

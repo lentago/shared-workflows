@@ -5,6 +5,34 @@
 Releases are cut per [RELEASING.md](RELEASING.md); callers pin to immutable
 semver tags.
 
+## v1.6.0 (unreleased)
+
+### Changed
+
+- **`site-deploy.yml` deploys by digest and stops pushing `:latest` (#85).**
+  Before, the workflow pushed `:latest` and `:<sha>`, attested the digest, then
+  ran `update-service --force-new-deployment`. That re-pulled whatever `:latest`
+  pointed to, so the running task never named the image that was attested.
+  - Only `:<sha>` is pushed. It stays as the human-readable handle.
+  - The image digest is now always resolved, even with `attest: false`. The step
+    fails if ECR returns no `sha256:` digest.
+  - A new step copies the service's current task definition into a new revision
+    with the app container's image set to `<registry>/<ecr_repo>@<digest>`. The
+    app container is the one container already pulling from `<ecr_repo>`; the
+    step fails unless exactly one matches. Read-only fields are dropped and
+    sidecars are untouched. The step then registers the revision.
+  - `update-service --task-definition <new revision>` replaces
+    `--force-new-deployment`. `wait services-stable` is unchanged.
+  - Task-definition tags are not copied, since that would also need
+    `ecs:TagResource` on the deploy role.
+- Internal `render-claude-summary` refs point at `v1.6.0`.
+
+Minor, not patch: no input changed, but callers on this version stop getting a
+`:latest` tag, and their services move onto deploy-registered task-definition
+revisions. The deploy role needs `ecs:DescribeTaskDefinition`,
+`ecs:RegisterTaskDefinition` and `iam:PassRole` on the task and execution roles.
+solidago's `<project>-<env>-github-actions` role already has all three.
+
 ## v1.5.0 (2026-10-29)
 
 ### Changed
