@@ -107,9 +107,10 @@ repo secrets store, passed through transparently.
 > `~/repos/CLAUDE.md` (Pull-request workflow section) and the
 > `review_prompt` block in `claude-review.yml`.
 >
-> One exception: the review-before-arming rule under **Auto-merge arming**
-> has no `review_prompt` counterpart. It governs when an operator arms the
-> PR, which a reviewer reading the PR can't observe. It is mirrored in
+> One exception: the rules under **Auto-merge arming** (review before
+> arming, arm the reviewed head, a runner-App PR's human approval) have no
+> `review_prompt` counterpart. They govern how an operator arms the PR,
+> which a reviewer reading the PR can't observe. They are mirrored in
 > `~/repos/CLAUDE.md` only.
 
 ### Open a PR — that's the deliverable
@@ -184,6 +185,19 @@ moment the required checks are green, so arming *is* the merge decision.
   comment is the review.
 - **Every finding is triaged on the PR.** Each one is either fixed, with
   the commit named, or declined with a reason.
+- **Arm the head you checked.** Pass the head the review and triage cover
+  (the reviewed commit, or a later one that only answers its findings) to
+  the arming call (`--match-head-commit`, below). A push between that check
+  and arming then makes the arm fail instead of merging something nobody
+  checked. A substantive push after arming re-opens the review rule above:
+  disarm (`gh pr merge --disable-auto`) until it is met again.
+- **A runner-App PR also needs a human's approval**
+  ([`.github` ADR-0014](https://github.com/lentago/.github/blob/main/docs/adr/0014-merge-promise-humans-own-the-policy.md)).
+  A PR authored by `lentago-claude-runner[bot]` merges only after a human
+  approves its current head; `agent-pr-gate`
+  ([#84](https://github.com/lentago/shared-workflows/issues/84)) enforces
+  this once it is required. A session may arm such a PR. A session never
+  submits that approval, even though it runs under the operator's identity.
 
 The review is advisory, never a required status check. This rule is the
 *review* gate. The required status checks remain the merge gate (below).
@@ -192,10 +206,12 @@ and fire it when green:
 
 - **Local sessions** (gh CLI available):
   ```bash
-  gh pr merge <PR_NUMBER> --auto --squash --delete-branch
+  gh pr merge <PR_NUMBER> --auto --squash --delete-branch \
+    --match-head-commit <CHECKED_HEAD_SHA>
   ```
-- **Cloud sessions** (no gh CLI): call the GitHub MCP server's
-  auto-merge tool with `mergeMethod: "SQUASH"`. Delete the branch after
+- **Cloud sessions** (no gh CLI): confirm the PR head is still the
+  checked commit, then call the GitHub MCP server's auto-merge tool with
+  `mergeMethod: "SQUASH"`. Delete the branch after
   merge if branch-protection doesn't do it for you.
 
 Without the arming step, the PR will wait for a human click forever.
