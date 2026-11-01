@@ -97,3 +97,21 @@ baseline to move from.
   `@main` was sound at repo inception; this decision reflects the fleet
   reaching a scale and posture where the deferred tagging work becomes the
   right next step, exactly as ADR-0002 described.
+
+## Addendum 2026-11-01
+
+On 2026-11-01 the GitHub release API reported `immutable: false` for `v1.5.0`,
+and no repository ruleset or tag protection covered tags. The immutability this
+ADR relies on is therefore a convention until the tag ruleset tracked in
+[lentago/.github#305](https://github.com/lentago/.github/issues/305) is applied.
+Until then, a `v*` tag can still be moved or deleted, and the guarantee in the
+Decision section holds only by operator discipline.
+
+**Decision (not to adopt full-SHA pinning fleet-wide).** Callers keep the
+semver-tag form described above and do not move to full-commit-SHA pins across
+the fleet. Both the caller and the reusable workflow are owned by one
+organization, so the supply-chain distance that SHA pinning guards against is
+small. A tag ruleset that forbids deleting or moving `v*` tags provides the same
+guarantee as a SHA pin, without a bump in every caller on every release. The
+Alternatives section's cost argument therefore still holds, and the ruleset
+(not SHA pinning) is the mechanism that closes the gap noted above.
