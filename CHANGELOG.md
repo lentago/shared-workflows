@@ -30,6 +30,11 @@ semver tags.
   - This repo runs it on its own PRs through `agent-pr-gate-self.yml`, with the
     script taken from the PR's base commit so a PR can't edit the script that
     checks it. Making the context required is lentago/.github#289.
+  - Its limit is recorded in the README. The runner App holds
+    `workflows: write`, so a PR it opens can add a workflow with a job named
+    like this one that passes, and required contexts are matched by name.
+    Until that permission goes, the gate stops a merge the App attempts by
+    mistake, not one it is trying to force.
 - Internal `render-claude-summary` refs point at `v1.6.0`.
 
 ### Fixed
@@ -50,14 +55,13 @@ semver tags.
     ref.
   - No input or job name changed. The only effect for callers is that a tag
     pin now holds for the resolver too.
+  - A caller keeps running `main`'s resolver until it bumps to this release,
+    because earlier tags carry the old `docs-check.yml`. Each caller's bump PR
+    runs the new verify step before that caller merges.
 
-Minor, not patch: a new workflow file. Callers of the other workflows have
-nothing to change.
-
-The README records the gate's limit. The runner App holds `workflows: write`,
-so a PR it opens can add a workflow with a job named like this one that passes,
-and required contexts are matched by name. Until that permission goes, the gate
-stops a merge the App attempts by mistake, not one it is trying to force.
+Minor, not patch, because `agent-pr-gate.yml` is a new workflow file. The
+`docs-check.yml` fix on its own would be a patch. Callers of the other
+workflows have nothing to change.
 
 ## v1.5.1 (2026-11-02)
 

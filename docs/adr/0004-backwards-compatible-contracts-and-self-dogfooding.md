@@ -86,4 +86,8 @@ ADR-0005's tags were meant to prevent.
 to `job.workflow_sha` and added a step that checks the commit on every run.
 The self-referential test hid this second bug the same way it hid the first,
 which strengthens the case for the retrospective's second-caller test.
-Validation for #95 used a real caller repository on a branch ref before merge.
+Before #95 merged, a workflow in this repository called `docs-check.yml` by
+its full name at the fix branch. That separates the reusable's own commit from
+the caller's ref, but it is not a caller in another repository. What covers
+that case is each caller's version-bump PR, which runs the new verify step
+before the caller merges.
