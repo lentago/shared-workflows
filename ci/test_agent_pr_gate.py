@@ -402,12 +402,17 @@ class Main(unittest.TestCase):
         old = os.environ.copy()
         os.environ.clear()
         os.environ.update(env)
+        out = io.StringIO()
         try:
-            rc = gate.main(["--repo", REPO, "--pr", "7", "--head-sha", HEAD, "--author-id", str(AGENT.user_id)])
+            # Captured, so the expected ::error:: line doesn't become an
+            # annotation on the ci-tests job that runs this file.
+            with contextlib.redirect_stdout(out):
+                rc = gate.main(["--repo", REPO, "--pr", "7", "--head-sha", HEAD, "--author-id", str(AGENT.user_id)])
         finally:
             os.environ.clear()
             os.environ.update(old)
         self.assertEqual(rc, 1)
+        self.assertEqual(out.getvalue(), "::error::agent-pr-gate: no GITHUB_TOKEN in the environment\n")
 
     def test_another_agent_named_by_login_alone_fails_closed(self):
         # v1.6.0 gated on the login. A caller naming another agent by login

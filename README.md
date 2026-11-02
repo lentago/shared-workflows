@@ -208,7 +208,8 @@ to force. It is the accident layer. The boundary is
 posted as a check run by a separate GitHub App and required by that App's ID.
 
 The logic lives at [`ci/agent_pr_gate.py`](ci/agent_pr_gate.py), checked out at
-the ref the caller pinned. Run its tests with `python3 ci/test_agent_pr_gate.py`.
+the ref the caller pinned. Run its tests with `python3 ci/test_agent_pr_gate.py`;
+`ci-tests.yml` runs them on every PR here.
 This repo runs the gate on its own PRs through
 [`agent-pr-gate-self.yml`](.github/workflows/agent-pr-gate-self.yml). There, the
 script comes from the PR's base commit, not the PR, so a PR can't edit the

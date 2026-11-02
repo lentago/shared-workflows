@@ -46,6 +46,9 @@ semver tags.
     secret and variable names, and the caller snippet. This repo runs it on its
     own PRs through `agent-pr-verdict-self.yml`, the pilot. Creating the
     environment and requiring the check are lentago/.github's follow-up.
+- This repo's own `ci/test_*.py` now run on every PR, through `ci-tests.yml`
+  (#99). Before this, nothing ran them. It is not a reusable workflow, so
+  callers have nothing to change.
 
 ### Changed
 
