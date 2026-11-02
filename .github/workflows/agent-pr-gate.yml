@@ -1,0 +1,149 @@
+# ============================================================================
+# Reusable: agent-pr-gate
+# ============================================================================
+# A required check that keeps the bullpen's runner App from merging its own
+# pull requests (lentago/claytonia#117 option A; lentago/.github ADR-0014).
+#
+# - A PR the runner App did not author passes at once, without reading
+#   anything, so human-authored PRs armed with `--auto --squash` merge on green
+#   exactly as before.
+# - A runner-App PR passes when a non-bot user with write access has approved
+#   the head commit being checked. A later push makes that approval stop
+#   counting: the push re-runs the gate on the new head.
+# - Under the routine exception (ADR-0014 point 4), a runner-App PR also passes
+#   when the runner App's latest `cr-automerge` record on the PR
+#   (`<!-- cr-automerge armed rule=<rule> head=<sha> -->`, lentago/claytonia
+#   #178) names the head being checked and the PR still meets that rule, read
+#   from the default branch's `.claytonia/automerge.json`. A push after arming
+#   moves the head away from the record, and the gate fails. The rule is checked
+#   again here because the runner App can post that comment itself.
+#
+# UNCONDITIONAL BY DESIGN. Callers trigger this with no `paths:` filter and
+# this job has no draft skip: a required context that never reports holds the
+# PR at "Expected" forever.
+#
+# Read-only (`contents: read`, `pull-requests: read`; the collaborator
+# permission endpoint needs only the metadata read every token has): the token
+# reads the PR, its reviews and comments, each approver's permission, and the
+# default branch's automerge policy. Nothing is written. Any API error fails
+# the check.
+#
+# LIMIT: a check like this one is a boundary against the runner App only while
+# the App cannot push changes to workflow files. The App holds `workflows:
+# write`, so a PR it opens can add a workflow whose job reports a passing check
+# under this check's name. Required contexts are matched by name, so that check
+# can satisfy the requirement. See README.md, "agent-pr-gate.yml".
+#
+# The logic lives in ci/agent_pr_gate.py (tests: ci/test_agent_pr_gate.py),
+# checked out from this repository at this workflow file's own commit
+# (`job.workflow_sha`), so a caller pinned to a tag runs that tag's script. On
+# this repository's own PRs it comes from the PR's base commit instead, so a
+# PR can't edit the script that checks it.
+# ============================================================================
+
+name: agent-pr-gate (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      agent_author:
+        description: "REST login of the agent whose PRs are gated."
+        type: string
+        default: "lentago-claude-runner[bot]"
+
+jobs:
+  agent-pr-gate:
+    name: agent-pr-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    # One evaluation per head commit at a time. Events for the same head queue
+    # behind the running one, never cancel it: a run waiting for cr-automerge's
+    # record must finish, and the last queued run then reads the latest state.
+    # Runs for different heads don't wait for each other.
+    concurrency:
+      group: agent-pr-gate-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Is this PR gated?
+        id: who
+        env:
+          NUMBER: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          AGENT: ${{ inputs.agent_author }}
+        run: |
+          if [[ -z "$NUMBER" ]]; then
+            echo "::error::agent-pr-gate runs on pull_request and pull_request_review events; this event carries no pull request"
+            exit 1
+          fi
+          if [[ "${AUTHOR,,}" != "${AGENT,,}" ]]; then
+            echo "PR #$NUMBER is authored by $AUTHOR, not $AGENT: nothing to gate."
+            echo "gated=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "gated=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The script comes from the same commit as this workflow file
+      # (job.workflow_sha), so a caller pinned to a tag runs that tag's script.
+      # An empty value fails the check: with no ref, actions/checkout would
+      # silently take the default branch. One exception: called from this
+      # repository's own PR (`uses: ./…`, a pull-request ref), the script comes
+      # from the PR's base commit, so a PR can't edit the script that checks it.
+      - name: Resolve the script's commit
+        if: steps.who.outputs.gated == 'true'
+        id: swref
+        env:
+          WF_FILE_REF: ${{ job.workflow_ref }}
+          WF_SHA: ${{ job.workflow_sha }}
+          WF_REPO: ${{ job.workflow_repository }}
+          REPO: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          ref=$WF_SHA
+          if [[ ! "$ref" =~ ^[0-9a-f]{40}$ || -z "$WF_REPO" ]]; then
+            echo "::error::agent-pr-gate can't tell which commit it runs from (job.workflow_repository '$WF_REPO', job.workflow_sha '$ref')"
+            exit 1
+          fi
+          if [[ "${REPO,,}" == "${WF_REPO,,}" && "$WF_FILE_REF" == *@refs/pull/* ]]; then
+            echo "Called from this repository's own PR: the script comes from base commit $BASE_SHA, not $ref."
+            ref=$BASE_SHA
+          fi
+          echo "Script: $WF_REPO@$ref"
+          echo "repository=$WF_REPO" >> "$GITHUB_OUTPUT"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout agent-pr-gate tooling
+        if: steps.who.outputs.gated == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ steps.swref.outputs.repository }}
+          ref: ${{ steps.swref.outputs.ref }}
+          path: .agent-pr-gate-tooling
+          sparse-checkout: ci
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Check approval or routine record
+        if: steps.who.outputs.gated == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          AGENT: ${{ inputs.agent_author }}
+          ACTION: ${{ github.event.action }}
+          ARMED: ${{ github.event.pull_request.auto_merge && 'armed' || '' }}
+        run: |
+          # cr-automerge arms first and posts its record a moment later. Any run
+          # on an armed PR (the run arming triggers, or one queued behind it)
+          # waits up to two minutes for a record of this head; an approval or a
+          # record already in place ends the wait at once.
+          WAIT=0
+          [[ "$ACTION" == auto_merge_enabled || -n "$ARMED" ]] && WAIT=120
+          python3 .agent-pr-gate-tooling/ci/agent_pr_gate.py \
+            --repo "$REPO" --pr "$NUMBER" --head-sha "$HEAD_SHA" \
+            --author "$AUTHOR" --agent "$AGENT" --wait-for-marker "$WAIT"
