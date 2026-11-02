@@ -42,7 +42,9 @@
 # `performed_via_github_app.id` is the App's integration ID (`agent_app_id`).
 # Logins decide nothing: GitHub's APIs spell the App's login two ways, and one
 # of them is a valid login for a human account. `agent_author` stays as an
-# input so callers that set it keep calling; it names the App in messages.
+# input; it names the App in messages. A caller that sets it to another agent
+# while either ID is still the runner App's default fails the job, rather than
+# gating the runner App and passing its own agent's PRs.
 #
 # The logic lives in ci/agent_pr_gate.py (tests: ci/test_agent_pr_gate.py),
 # checked out from this repository at this workflow file's own commit
@@ -94,9 +96,18 @@ jobs:
           AUTHOR_ID: ${{ github.event.pull_request.user.id }}
           AGENT: ${{ inputs.agent_author }}
           AGENT_ID: ${{ inputs.agent_user_id }}
+          AGENT_APP_ID: ${{ inputs.agent_app_id }}
         run: |
           if [[ -z "$NUMBER" ]]; then
             echo "::error::agent-pr-gate runs on pull_request and pull_request_review events; this event carries no pull request"
+            exit 1
+          fi
+          # Until v1.7.0 the login decided. A caller that names another agent by
+          # agent_author alone would now gate the runner App instead and pass its
+          # own agent's PRs here, before the script runs: refuse it. The script
+          # makes the same check (mixed_identity) for the gated path.
+          if [[ "${AGENT,,}" != "lentago-claude-runner[bot]" && ( "$AGENT_ID" == 293961292 || "$AGENT_APP_ID" == 4062202 ) ]]; then
+            echo "::error::agent_author is '$AGENT', but agent_user_id ($AGENT_ID) or agent_app_id ($AGENT_APP_ID) is still the runner App's default: since v1.7.0 the IDs decide, so set agent_user_id and agent_app_id for that agent"
             exit 1
           fi
           if [[ ! "$AUTHOR_ID" =~ ^[0-9]+$ || ! "$AGENT_ID" =~ ^[0-9]+$ ]]; then

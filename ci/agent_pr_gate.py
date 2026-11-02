@@ -326,6 +326,22 @@ def post_verdict(checks, repo, name, head, passed, message, details_url=None, ex
     return checks.post("repos/%s/check-runs" % repo, body).get("html_url", "")
 
 
+def mixed_identity(agent):
+    """"" or why `agent` names another agent by login while keeping the runner App's IDs.
+
+    Until v1.7.0 the login decided. A caller that names another agent by
+    `agent_author` alone would, since the IDs decide, gate the runner App
+    instead and pass its own agent's PRs. Refuse that rather than fail open.
+    """
+    if agent.login.lower() == DEFAULT_AGENT.login.lower():
+        return ""
+    if agent.user_id == DEFAULT_AGENT.user_id or agent.app_id == DEFAULT_AGENT.app_id:
+        return ("the agent's login is %s, but its user id (%d) or App id (%d) is still the default "
+                "runner App's: since v1.7.0 the IDs decide, so set agent_user_id and agent_app_id "
+                "for that agent" % (agent.login, agent.user_id, agent.app_id))
+    return ""
+
+
 def one_line(message):
     # One line, whatever a PR put in its title or paths: a line break would let
     # PR-controlled text start a workflow command of its own.
@@ -363,6 +379,10 @@ def main(argv=None):
         ap.error("--head-sha and --author-id are required without --verdict")
     agent = Agent(args.agent_user_id, args.agent_app_id, args.agent_login)
     name = args.verdict or "agent-pr-gate"
+    reason = mixed_identity(agent)
+    if reason:
+        print("::error::%s: %s" % (name, one_line(reason)))
+        return 2
 
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if not token:

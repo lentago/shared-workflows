@@ -18,9 +18,10 @@
 #     default branch's workflow file. pull_request_review has no `_target` form
 #     and runs the PR's own workflow file, so reviews reach this path through
 #     the gate's run completing.
-#   - issue_comment (created, on PRs): runs the default branch's workflow file.
-#     The cr-automerge record arriving re-evaluates the PR, which replaces the
-#     gate's 120-second poll on this path.
+#   - issue_comment (created, on PRs, by the agent's bot account): runs the
+#     default branch's workflow file. The cr-automerge record arriving
+#     re-evaluates the PR, which replaces the gate's 120-second poll on this
+#     path. Other commenters' comments start no job in the environment.
 # The job takes nothing from the triggering event beyond what names the PR:
 # its number, or on workflow_run the completed run's head and repository, used
 # only to look the number up. It then reads the PR's current state through the
@@ -92,12 +93,16 @@ jobs:
     name: post-verdict
     # The three trusted events, narrowed to the activity that can change the
     # verdict. Reviews arrive as the gate caller's run completing on a
-    # pull_request_review event; the record arrives as a comment whose first
-    # line is the cr-automerge marker (the script checks who posted it).
+    # pull_request_review event; the record arrives as a comment by the agent's
+    # bot account (user id, never login) whose first line is the cr-automerge
+    # marker, so no other commenter starts a job in the environment. The script
+    # still checks the comment's performed_via_github_app.id.
     if: >-
       github.event_name == 'pull_request_target'
       || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request_review')
-      || (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '<!-- cr-automerge armed '))
+      || (github.event_name == 'issue_comment' && github.event.issue.pull_request
+          && github.event.comment.user.id == inputs.agent_user_id
+          && startsWith(github.event.comment.body, '<!-- cr-automerge armed '))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: agent-pr-gate

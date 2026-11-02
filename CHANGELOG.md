@@ -58,8 +58,10 @@ semver tags.
   integration ID.
   - New optional inputs `agent_user_id` (default `293961292`) and
     `agent_app_id` (default `4062202`) on both workflows. `agent_author` stays
-    as an input, so callers that set it keep calling; it now names the App in
-    messages only.
+    as an input; it now names the App in messages only. A caller that sets it
+    to another agent while either ID is still the default fails the job,
+    rather than gating the runner App and passing its own agent's PRs: set
+    `agent_user_id` and `agent_app_id` for that agent.
   - The script's gate-mode arguments are `--author-id` and `--author-login`
     in place of `--author`, with `--agent-user-id`, `--agent-app-id` and
     `--agent-login` in place of `--agent`. The script ships with the workflow
@@ -68,9 +70,11 @@ semver tags.
     the event's author ID to the input before anything else.
 
 Minor, not patch, because `agent-pr-verdict.yml` is a new workflow file and
-both workflows gain inputs. Callers of `agent-pr-gate.yml` have nothing to
-change; the only effect for them is that identity no longer depends on how an
-API spells a login.
+both workflows gain inputs. Callers of `agent-pr-gate.yml` that use the
+defaults, which is every caller in the fleet, have nothing to change; the only
+effect for them is that identity no longer depends on how an API spells a
+login. A caller that named another agent by `agent_author` alone fails loudly
+until it sets that agent's IDs, rather than silently passing that agent's PRs.
 
 ## v1.6.0 (2026-11-02)
 

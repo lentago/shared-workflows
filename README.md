@@ -194,7 +194,7 @@ integration ID. Optional inputs, with the runner App's values as defaults:
 |---|---|---|
 | `agent_user_id` | `293961292` | A PR is gated when its author's user ID is this. |
 | `agent_app_id` | `4062202` | A cr-automerge record counts only when posted through this App. |
-| `agent_author` | `lentago-claude-runner[bot]` | Nothing since v1.7.0; it names the App in messages. Callers that set it keep calling. |
+| `agent_author` | `lentago-claude-runner[bot]` | Nothing since v1.7.0; it names the App in messages. Set to another agent while either ID above is still the default, it fails the job: set both IDs for that agent. |
 
 **Limit: the App's `workflows: write`.** The runner App's installation holds
 `workflows: write`, so a PR it opens can add or change a workflow. Such a
@@ -234,7 +234,7 @@ PR cannot change. The caller triggers it on three events:
 |---|---|---|
 | Opened, pushed, edited, reopened, marked ready, auto-merge armed | `pull_request_target` | It runs the base branch's workflow file. |
 | Review submitted or dismissed | `workflow_run` on completion of the repo's `agent-pr-gate` caller | `pull_request_review` has no `_target` form and runs the PR's own workflow file; `workflow_run` runs the default branch's. |
-| cr-automerge record posted | `issue_comment` (`created`, on PRs only) | It runs the default branch's workflow file. It replaces the gate's 120-second poll on this path. |
+| cr-automerge record posted | `issue_comment` (`created`, on PRs only, by the agent's bot account) | It runs the default branch's workflow file. It replaces the gate's 120-second poll on this path. Comments from anyone else start no job in the environment. |
 
 The job takes nothing from the triggering event beyond what names the PR: its
 number, or on `workflow_run` the completed run's head and repository, used only

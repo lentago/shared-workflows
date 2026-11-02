@@ -409,6 +409,30 @@ class Main(unittest.TestCase):
             os.environ.update(old)
         self.assertEqual(rc, 1)
 
+    def test_another_agent_named_by_login_alone_fails_closed(self):
+        # v1.6.0 gated on the login. A caller naming another agent by login
+        # alone must not silently gate the runner App and pass its own agent.
+        old = os.environ.copy()
+        os.environ["GITHUB_TOKEN"] = "t"
+        try:
+            for extra in ([], ["--agent-user-id", "5"], ["--agent-app-id", "6"]):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    rc = gate.main(["--repo", REPO, "--pr", "7", "--head-sha", HEAD, "--author-id", "5",
+                                    "--agent-login", "other-agent[bot]"] + extra)
+                self.assertEqual(rc, 2, extra)
+                self.assertTrue(out.getvalue().startswith("::error::"), extra)
+                self.assertIn("agent_user_id and agent_app_id", out.getvalue())
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def test_another_agent_with_its_own_ids_is_accepted(self):
+        agent = gate.Agent(5, 6, "other-agent[bot]")
+        self.assertEqual(gate.mixed_identity(agent), "")
+        self.assertEqual(gate.mixed_identity(gate.DEFAULT_AGENT), "")
+        self.assertEqual(gate.mixed_identity(gate.Agent(5, 6, "LENTAGO-claude-runner[bot]")), "")
+
     def test_gate_mode_needs_a_head_and_an_author_id(self):
         for argv in (["--head-sha", HEAD], ["--author-id", "1"], []):
             with self.assertRaises(SystemExit) as cm:
