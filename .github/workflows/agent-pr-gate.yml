@@ -22,9 +22,11 @@
 # this job has no draft skip: a required context that never reports holds the
 # PR at "Expected" forever.
 #
-# Read-only: the token reads the PR, its reviews and comments, the
-# collaborator permission of each approver, and the default branch's
-# automerge policy. Nothing is written. Any API error fails the check.
+# Read-only (`contents: read`, `pull-requests: read`; the collaborator
+# permission endpoint needs only the metadata read every token has): the token
+# reads the PR, its reviews and comments, each approver's permission, and the
+# default branch's automerge policy. Nothing is written. Any API error fails
+# the check.
 #
 # LIMIT: a check like this one is a boundary against the runner App only while
 # the App cannot push changes to workflow files. The App holds `workflows:
@@ -57,13 +59,13 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      issues: read
-    # One evaluation per head commit at a time; a newer event for the same head
-    # (an approval, say) replaces an older run. Runs for different heads don't
-    # cancel each other, so a push never strands the new head without a result.
+    # One evaluation per head commit at a time. Events for the same head queue
+    # behind the running one, never cancel it: a run waiting for cr-automerge's
+    # record must finish, and the last queued run then reads the latest state.
+    # Runs for different heads don't wait for each other.
     concurrency:
       group: agent-pr-gate-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
-      cancel-in-progress: true
+      cancel-in-progress: false
 
     steps:
       - name: Is this PR gated?
@@ -134,11 +136,14 @@ jobs:
           AUTHOR: ${{ github.event.pull_request.user.login }}
           AGENT: ${{ inputs.agent_author }}
           ACTION: ${{ github.event.action }}
+          ARMED: ${{ github.event.pull_request.auto_merge && 'armed' || '' }}
         run: |
-          # cr-automerge arms first and posts its record a moment later, so the
-          # run that arming triggers waits up to two minutes for the record.
+          # cr-automerge arms first and posts its record a moment later. Any run
+          # on an armed PR (the run arming triggers, or one queued behind it)
+          # waits up to two minutes for a record of this head; an approval or a
+          # record already in place ends the wait at once.
           WAIT=0
-          [[ "$ACTION" == auto_merge_enabled ]] && WAIT=120
+          [[ "$ACTION" == auto_merge_enabled || -n "$ARMED" ]] && WAIT=120
           python3 .agent-pr-gate-tooling/ci/agent_pr_gate.py \
             --repo "$REPO" --pr "$NUMBER" --head-sha "$HEAD_SHA" \
             --author "$AUTHOR" --agent "$AGENT" --wait-for-marker "$WAIT"

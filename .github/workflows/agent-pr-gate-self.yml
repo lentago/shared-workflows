@@ -23,5 +23,4 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      issues: read
     uses: ./.github/workflows/agent-pr-gate.yml

@@ -25,7 +25,7 @@ semver tags.
     the gate. Records from any other author are ignored.
   - Anything else fails with one line naming what is missing, and so does a
     failed API call.
-  - The token is read-only: `contents`, `pull-requests` and `issues` read. The
+  - The token is read-only: `contents: read` and `pull-requests: read`. The
     logic is in `ci/agent_pr_gate.py`, with tests in `ci/test_agent_pr_gate.py`.
   - This repo runs it on its own PRs through `agent-pr-gate-self.yml`, with the
     script taken from the PR's base commit so a PR can't edit the script that

@@ -152,9 +152,10 @@ person says yes.
 
   A push after arming moves the head away from the record, and the gate fails.
   The rule is checked again because the App can post that comment itself, so a
-  forged record passes only a PR the rule allows anyway. The run that arming
-  triggers (`auto_merge_enabled`) waits up to two minutes for the record, which
-  `cr-automerge` posts just after it arms.
+  forged record passes only a PR the rule allows anyway. `cr-automerge` posts
+  the record just after it arms, so any run on an armed PR waits up to two
+  minutes for it. Runs for the same head queue rather than cancel each other,
+  so a review or edit in that window can't cut the wait short.
 - **Anything else fails**, with one line naming what is missing. A failed API
   call fails too.
 
@@ -178,7 +179,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      issues: read
     uses: lentago/shared-workflows/.github/workflows/agent-pr-gate.yml@v1.6.0
 ```
 
