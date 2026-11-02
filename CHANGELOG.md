@@ -5,6 +5,40 @@
 Releases are cut per [RELEASING.md](RELEASING.md); callers pin to immutable
 semver tags.
 
+## v1.6.0 (2026-11-02)
+
+### Added
+
+- **`agent-pr-gate.yml`, a required check that holds runner-App PRs for a
+  human approval (#84).** lentago/claytonia#117 chose option A on 2026-10-30,
+  and lentago/.github ADR-0014 records the rule: a PR the bullpen's runner App
+  authored merges only after a human with write access approves its current
+  head, or under `cr-automerge`'s routine exception.
+  - A PR the App did not author passes at once, without an API call.
+  - A runner-App PR passes when a non-bot user with write access has approved
+    the head commit being checked. A push re-runs the gate on the new head,
+    where the old approval no longer counts.
+  - Under the routine exception, it passes when the App's latest
+    `<!-- cr-automerge armed rule=<rule> head=<sha> -->` record
+    (lentago/claytonia#178) names that head and the PR still meets the rule in
+    the default branch's `.claytonia/automerge.json`. A push after arming fails
+    the gate. Records from any other author are ignored.
+  - Anything else fails with one line naming what is missing, and so does a
+    failed API call.
+  - The token is read-only: `contents`, `pull-requests` and `issues` read. The
+    logic is in `ci/agent_pr_gate.py`, with tests in `ci/test_agent_pr_gate.py`.
+  - This repo runs it on its own PRs through `agent-pr-gate-self.yml`. Making
+    the context required is lentago/.github#289.
+- Internal `render-claude-summary` refs point at `v1.6.0`.
+
+Minor, not patch: a new workflow file. Callers of the other workflows have
+nothing to change.
+
+The README records the gate's limit. The runner App holds `workflows: write`,
+so a PR it opens can add a workflow with a job named like this one that passes,
+and required contexts are matched by name. Until that permission goes, the gate
+stops a merge the App attempts by mistake, not one it is trying to force.
+
 ## v1.5.1 (2026-11-02)
 
 ### Fixed

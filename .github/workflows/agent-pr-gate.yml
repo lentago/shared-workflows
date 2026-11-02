@@ -1,0 +1,122 @@
+# ============================================================================
+# Reusable: agent-pr-gate
+# ============================================================================
+# A required check that keeps the bullpen's runner App from merging its own
+# pull requests (lentago/claytonia#117 option A; lentago/.github ADR-0014).
+#
+# - A PR the runner App did not author passes at once, without reading
+#   anything, so human-authored PRs armed with `--auto --squash` merge on green
+#   exactly as before.
+# - A runner-App PR passes when a non-bot user with write access has approved
+#   the head commit being checked. A later push makes that approval stop
+#   counting: the push re-runs the gate on the new head.
+# - Under the routine exception (ADR-0014 point 4), a runner-App PR also passes
+#   when the runner App's latest `cr-automerge` record on the PR
+#   (`<!-- cr-automerge armed rule=<rule> head=<sha> -->`, lentago/claytonia
+#   #178) names the head being checked and the PR still meets that rule, read
+#   from the default branch's `.claytonia/automerge.json`. A push after arming
+#   moves the head away from the record, and the gate fails. The rule is checked
+#   again here because the runner App can post that comment itself.
+#
+# UNCONDITIONAL BY DESIGN. Callers trigger this with no `paths:` filter and
+# this job has no draft skip: a required context that never reports holds the
+# PR at "Expected" forever.
+#
+# Read-only: the token reads the PR, its reviews and comments, the
+# collaborator permission of each approver, and the default branch's
+# automerge policy. Nothing is written. Any API error fails the check.
+#
+# LIMIT: a check like this one is a boundary against the runner App only while
+# the App cannot push changes to workflow files. The App holds `workflows:
+# write`, so a PR it opens can add a workflow whose job reports a passing check
+# under this check's name. Required contexts are matched by name, so that check
+# can satisfy the requirement. See README.md, "agent-pr-gate.yml".
+#
+# The logic lives in ci/agent_pr_gate.py (tests: ci/test_agent_pr_gate.py),
+# checked out from this repository at the ref the caller pinned, the same way
+# docs-check.yml fetches its resolver.
+# ============================================================================
+
+name: agent-pr-gate (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      agent_author:
+        description: "REST login of the agent whose PRs are gated."
+        type: string
+        default: "lentago-claude-runner[bot]"
+
+jobs:
+  agent-pr-gate:
+    name: agent-pr-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    # One evaluation per head commit at a time; a newer event for the same head
+    # (an approval, say) replaces an older run. Runs for different heads don't
+    # cancel each other, so a push never strands the new head without a result.
+    concurrency:
+      group: agent-pr-gate-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Is this PR gated?
+        id: who
+        env:
+          NUMBER: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          AGENT: ${{ inputs.agent_author }}
+        run: |
+          if [[ -z "$NUMBER" ]]; then
+            echo "::error::agent-pr-gate runs on pull_request and pull_request_review events; this event carries no pull request"
+            exit 1
+          fi
+          if [[ "${AUTHOR,,}" != "${AGENT,,}" ]]; then
+            echo "PR #$NUMBER is authored by $AUTHOR, not $AGENT: nothing to gate."
+            echo "gated=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "gated=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Same ref the caller invoked (job_workflow_ref, not workflow_ref; see
+      # docs-check.yml), so a caller pinned to a tag runs that tag's script.
+      - name: Resolve shared-workflows ref
+        if: steps.who.outputs.gated == 'true'
+        id: swref
+        env:
+          WORKFLOW_REF: ${{ github.job_workflow_ref }}
+        run: echo "ref=${WORKFLOW_REF##*@}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout agent-pr-gate tooling
+        if: steps.who.outputs.gated == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: lentago/shared-workflows
+          ref: ${{ steps.swref.outputs.ref }}
+          path: .agent-pr-gate-tooling
+          sparse-checkout: ci
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Check approval or routine record
+        if: steps.who.outputs.gated == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          AGENT: ${{ inputs.agent_author }}
+          ACTION: ${{ github.event.action }}
+        run: |
+          # cr-automerge arms first and posts its record a moment later, so the
+          # run that arming triggers waits up to two minutes for the record.
+          WAIT=0
+          [[ "$ACTION" == auto_merge_enabled ]] && WAIT=120
+          python3 .agent-pr-gate-tooling/ci/agent_pr_gate.py \
+            --repo "$REPO" --pr "$NUMBER" --head-sha "$HEAD_SHA" \
+            --author "$AUTHOR" --agent "$AGENT" --wait-for-marker "$WAIT"

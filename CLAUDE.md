@@ -33,6 +33,7 @@ and [RELEASING.md](RELEASING.md)):
 | `docs-check.yml` | Relative-markdown-link resolver; unconditional so it can be a required check | intended fleet-wide (adoption pending) |
 | `tf-lint.yml` | Terraform quality gates: fmt, validate (no-backend), tflint, trivy config; per-gate toggles | `solidago`, `kalmia`, `claytonia`, `drosera`, `.github` (adoption pending) |
 | `site-deploy.yml` | Astro site → ECR → ECS Fargate; includes Trivy scan + SLSA L3 attestation; callers migrate one at a time | `site-lentago-dev`, `site-icecreamtofightwith-com`, `site-pondviewlane-com` (pending migration) |
+| `agent-pr-gate.yml` | Required check (`.github` ADR-0014): human-authored PRs pass at once; a runner-App PR needs an approval on its head from a human with write access, or a `cr-automerge` record for its head under a rule it still meets | this repo (self-caller); fleet rollout in lentago/.github#289 |
 
 `docs-check.yml` runs the resolver in `ci/check_docs_links.py` (tested by
 `ci/test_check_docs_links.py`) against the caller's tree. It must be triggered

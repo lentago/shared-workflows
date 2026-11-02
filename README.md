@@ -124,6 +124,79 @@ jobs:
         2. **Bar** — ...
 ```
 
+### `agent-pr-gate.yml`
+
+A required check that holds the bullpen's pull requests until a human approves
+them (lentago/claytonia#117, lentago/.github
+[ADR-0014](https://github.com/lentago/.github/blob/main/docs/adr/0014-merge-promise-humans-own-the-policy.md)).
+The bullpen's runner App can push branches, and anything that can push can
+merge once the checks are green. This check is red on the App's PRs until a
+person says yes.
+
+- **A PR the runner App did not author passes at once**, without an API call. A
+  human-authored PR armed with `--auto --squash` merges on green as before.
+- **A runner-App PR passes when a non-bot user with write access has approved
+  the head commit being checked.** Each user's latest review that decided
+  something counts: an approval, a change request or a dismissal. A push re-runs
+  the gate on the new head, where the old approval no longer counts. Approving
+  re-runs it too, so an armed PR merges right after the approval.
+- **Routine exception** (ADR-0014 point 4). A runner-App PR that `cr-automerge`
+  armed under a rule passes when two things hold:
+  - The latest record of the arming names the head commit being checked. The
+    record is a comment authored by `lentago-claude-runner[bot]` whose first
+    line is `<!-- cr-automerge armed rule=<rule> head=<sha> -->`. The same text
+    from any other author is ignored.
+  - The PR still meets that rule as the default branch's
+    `.claytonia/automerge.json` defines it: title, paths, file count, open, not
+    a draft, same-repository branch to the default branch.
+
+  A push after arming moves the head away from the record, and the gate fails.
+  The rule is checked again because the App can post that comment itself, so a
+  forged record passes only a PR the rule allows anyway. The run that arming
+  triggers (`auto_merge_enabled`) waits up to two minutes for the record, which
+  `cr-automerge` posts just after it arms.
+- **Anything else fails**, with one line naming what is missing. A failed API
+  call fails too.
+
+Trigger it unconditionally, with no `paths:` filter, and keep the trigger list
+below. The job is named `agent-pr-gate`, so called from a job with the same id
+its context is `agent-pr-gate / agent-pr-gate`. Making that context required is
+lentago/.github#289. Optional input: `agent_author` (default
+`lentago-claude-runner[bot]`), the REST login whose PRs are gated.
+
+```yaml
+name: agent-pr-gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review, auto_merge_enabled]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+jobs:
+  agent-pr-gate:
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    uses: lentago/shared-workflows/.github/workflows/agent-pr-gate.yml@v1.6.0
+```
+
+**Limit: the App's `workflows: write`.** The runner App's installation holds
+`workflows: write`, so a PR it opens can add or change a workflow. Such a
+workflow can run a job named like this one that simply passes. Required contexts
+are matched by name, and every Actions check has the same source, so that job's
+check can satisfy the requirement. That limit applies to any check built from
+Actions. While the App holds the permission, the gate stops a merge the App
+attempts by mistake, but not one it is trying to force. Making it a boundary
+means taking `workflows: write` away from the App, or requiring the check from a
+source the App can't drive.
+
+The logic lives at [`ci/agent_pr_gate.py`](ci/agent_pr_gate.py), checked out at
+the ref the caller pinned. Run its tests with `python3 ci/test_agent_pr_gate.py`.
+This repo runs the gate on its own PRs through
+[`agent-pr-gate-self.yml`](.github/workflows/agent-pr-gate-self.yml).
+
 ### `docs-check.yml`
 
 Resolves relative markdown links across a repo's git-tracked markdown and
