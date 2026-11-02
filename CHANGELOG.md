@@ -30,9 +30,17 @@ semver tags.
   deploy role's OIDC trust admits only a caller's `main` branch.
 - Internal `render-claude-summary` refs point at `v1.5.1`.
 
-Patch, not minor: no input, permission or job name changed. The only effect
-for callers is that a deploy whose image did not go live now reports red, as it
-did before the breaker was turned on.
+Patch, not minor: no input, permission or job name changed. The effect for
+callers is that a deploy whose image did not go live now reports red, as it did
+before the breaker was turned on.
+
+A deployment that another update replaces before it completes also reports
+red, because the job can't confirm its own image went live. Overlapping merges
+don't trigger this: each calling site repo holds a workflow-level `deploy-main`
+concurrency group with `cancel-in-progress: true`, so the older run is
+cancelled, not failed. What does trigger it is an out-of-band `update-service`
+on the same service during the wait, such as a Terraform apply or a console
+change.
 
 ## v1.5.0 (2026-10-29)
 
