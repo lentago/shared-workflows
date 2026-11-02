@@ -35,6 +35,7 @@ actually runs here.
 | **A required check must be unconditional** — a required status check whose workflow never triggers is held "Expected" forever and deadlocks every non-matching PR | [`docs-check.yml`](.github/workflows/docs-check.yml) documents "no `paths:` filter"; `docs-check / docs-check` is the one required check on this repo's `main` today |
 | **Dogfood a reusable workflow on its own source** — catch a broken reusable in *its own* PR, not only in a downstream caller | [`docs-check-self.yml`](.github/workflows/docs-check-self.yml) calls `uses: ./.github/workflows/docs-check.yml` (local path, not `@main`) so a PR is checked by the version inside that PR |
 | **Ref-resolution correctness for cross-repo checkouts** — a reusable that checks out its own repo must use the commit the caller pinned, not the caller's ref and not a default branch | [`docs-check.yml`](.github/workflows/docs-check.yml) checks itself out at `job.workflow_sha` and verifies the commit on every run. A self-referential test masked two earlier bugs: `workflow_ref` failed every external caller until [#30](https://github.com/lentago/shared-workflows/pull/30), and #30's `github.job_workflow_ref` evaluated empty, so callers silently ran `main`'s resolver until [#95](https://github.com/lentago/shared-workflows/issues/95) |
+| **A merge gate the gated actor can't impersonate** — an Actions job can't be a boundary against an App that holds `workflows: write`, because every Actions check reports from the same source; the check must come from a source the actor can't drive | [`agent-pr-verdict.yml`](.github/workflows/agent-pr-verdict.yml) posts the verdict as a check run through a second GitHub App whose key lives only in a `main`-only environment, so the ruleset can require it by that App's integration ID ([#97](https://github.com/lentago/shared-workflows/issues/97)); [`agent-pr-gate.yml`](.github/workflows/agent-pr-gate.yml) stays as the accident layer |
 | **One canonical policy source with declared, manually-audited mirrors** — govern org-wide conventions from one file while being explicit about where the text is duplicated and why | [`CLAUDE.md`](CLAUDE.md)'s "Fleet PR-workflow (canonical source)" section names its two mirrors and states the keep-in-sync obligation (manual discipline, not automation) |
 | **Backwards-compatible `workflow_call` contracts** — interface discipline for shared automation: a new *required* input breaks every caller silently | [`CLAUDE.md`](CLAUDE.md) conventions: add inputs as optional with sensible defaults, never required |
 
@@ -162,8 +163,7 @@ person says yes.
 Trigger it unconditionally, with no `paths:` filter, and keep the trigger list
 below. The job is named `agent-pr-gate`, so called from a job with the same id
 its context is `agent-pr-gate / agent-pr-gate`. Making that context required is
-lentago/.github#289. Optional input: `agent_author` (default
-`lentago-claude-runner[bot]`), the REST login whose PRs are gated.
+lentago/.github#289.
 
 ```yaml
 name: agent-pr-gate
@@ -179,18 +179,33 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    uses: lentago/shared-workflows/.github/workflows/agent-pr-gate.yml@v1.6.0
+    uses: lentago/shared-workflows/.github/workflows/agent-pr-gate.yml@v1.7.0
 ```
+
+**Identity is by ID, never by login.** A login is not a stable identity across
+GitHub's APIs: REST reports the runner App as `lentago-claude-runner[bot]`,
+GraphQL as `lentago-claude-runner`, and the GraphQL form is a valid login for a
+human account. So the gate matches a PR's author on the App's bot-account user
+ID (`pull_request.user.id`; PR objects carry no `performed_via_github_app`), and
+a cr-automerge record on the comment's `performed_via_github_app.id`, the App's
+integration ID. Optional inputs, with the runner App's values as defaults:
+
+| Input | Default | Decides |
+|---|---|---|
+| `agent_user_id` | `293961292` | A PR is gated when its author's user ID is this. |
+| `agent_app_id` | `4062202` | A cr-automerge record counts only when posted through this App. |
+| `agent_author` | `lentago-claude-runner[bot]` | Nothing since v1.7.0; it names the App in messages. Callers that set it keep calling. |
 
 **Limit: the App's `workflows: write`.** The runner App's installation holds
 `workflows: write`, so a PR it opens can add or change a workflow. Such a
 workflow can run a job named like this one that simply passes. Required contexts
-are matched by name, and every Actions check has the same source, so that job's
-check can satisfy the requirement. That limit applies to any check built from
-Actions. While the App holds the permission, the gate stops a merge the App
-attempts by mistake, but not one it is trying to force. Making it a boundary
-means taking `workflows: write` away from the App, or requiring the check from a
-source the App can't drive.
+are matched by name and source, and every Actions check has the same source (the
+Actions App, integration ID 15368), so that job's check can satisfy the
+requirement. That limit applies to any check built from Actions. This gate
+therefore stops a merge the App attempts by mistake, but not one it is trying
+to force. It is the accident layer. The boundary is
+[`agent-pr-verdict.yml`](#agent-pr-verdictyml) below: the same decision,
+posted as a check run by a separate GitHub App and required by that App's ID.
 
 The logic lives at [`ci/agent_pr_gate.py`](ci/agent_pr_gate.py), checked out at
 the ref the caller pinned. Run its tests with `python3 ci/test_agent_pr_gate.py`.
@@ -198,6 +213,140 @@ This repo runs the gate on its own PRs through
 [`agent-pr-gate-self.yml`](.github/workflows/agent-pr-gate-self.yml). There, the
 script comes from the PR's base commit, not the PR, so a PR can't edit the
 script that checks it.
+
+### `agent-pr-verdict.yml`
+
+The trusted path of the agent PR gate
+([#97](https://github.com/lentago/shared-workflows/issues/97)). It makes the
+same decision as `agent-pr-gate.yml`, through the same script, and posts it as
+a check run named `agent-pr-verdict` through a second GitHub App, the **gate
+App**. The ruleset then requires that check by the gate App's integration ID.
+Every Actions job reports from the Actions App, so a workflow the runner App
+adds to its PR can post a check run of the same name and still not satisfy the
+requirement. `agent-pr-gate.yml` stays as the accident layer: it gives quick
+feedback on every event, and its run completing is what triggers this
+workflow's review path.
+
+**Where the verdict is computed.** Only in runs whose workflow file and code the
+PR cannot change. The caller triggers it on three events:
+
+| PR activity | Trigger | Why this trigger |
+|---|---|---|
+| Opened, pushed, edited, reopened, marked ready, auto-merge armed | `pull_request_target` | It runs the base branch's workflow file. |
+| Review submitted or dismissed | `workflow_run` on completion of the repo's `agent-pr-gate` caller | `pull_request_review` has no `_target` form and runs the PR's own workflow file; `workflow_run` runs the default branch's. |
+| cr-automerge record posted | `issue_comment` (`created`, on PRs only) | It runs the default branch's workflow file. It replaces the gate's 120-second poll on this path. |
+
+The job takes nothing from the triggering event beyond what names the PR: its
+number, or on `workflow_run` the completed run's head and repository, used only
+to look the number up. It then reads the PR's current state through the API
+with the read-only `GITHUB_TOKEN`, makes the decision, and posts the check run
+on the PR's current head. It never checks
+out or runs the PR's code; the script comes from this repository at the commit
+the caller pinned (`job.workflow_sha`), and the job verifies that commit. Fork
+PRs also trigger `pull_request_target` and are safe for the same reason. The
+job's own result is not the verdict: it succeeds once a verdict is posted,
+whichever way the verdict went, and fails only when none could be posted (a
+missing secret or variable, an unreadable PR, a refused check run). The verdict
+is the check run, and a PR with no verdict on its head stays blocked.
+
+The review path runs the PR's own copy of the `agent-pr-gate` caller, since
+`pull_request_review` has no `_target` form. A PR that renames that caller or
+drops `pull_request_review` from its triggers keeps an approval from reaching
+the verdict: the check stays red, never wrongly green. Editing the PR's title
+or body re-evaluates it through `pull_request_target`, with the approval on the
+head counted.
+
+**Where the key lives.** The gate App's private key is a secret of a GitHub
+environment named `agent-pr-gate`, one per gated repo, with deployment branches
+limited to `main` and no admin bypass (lentago/.github
+`terraform/environments.tf` creates it). The branch policy is matched against
+the run's `GITHUB_REF`: `pull_request_target` runs with the base branch's ref,
+`workflow_run` and `issue_comment` with the default branch's, so all three get
+the key. A `pull_request` or `pull_request_review` run (ref
+`refs/pull/<n>/merge`) is refused the environment, and so is a workflow the
+runner App pushes on its own branch. The job mints an installation token scoped
+to its one repository and to `checks: write`, which is revoked when the job
+ends.
+
+**Order matters.** GitHub creates an environment with no protection rules the
+first time a job names one that does not exist. So the environment is created
+by lentago/.github's Terraform, with its branch policy, before any caller
+references it, and the key is never set into an environment without that
+policy. The job checks this itself: before minting a token it reads the
+environment and refuses one without custom branch policies or with an admin
+bypass, which is what an auto-created environment looks like.
+
+| Name | Kind | Holds |
+|---|---|---|
+| `agent-pr-gate` | environment | Deployment branches `main` only; `can_admins_bypass = false`. |
+| `AGENT_PR_GATE_APP_KEY` | environment secret | The gate App's private key (PEM). Never in Terraform state, on the NAS, on a runner LXC, or in the claytonia queue. |
+| `AGENT_PR_GATE_APP_ID` | environment variable | The gate App's App ID. Its Client ID works too; both are valid JWT issuers. |
+
+```bash
+gh secret set AGENT_PR_GATE_APP_KEY --env agent-pr-gate --repo lentago/<repo> < key.pem
+gh variable set AGENT_PR_GATE_APP_ID --env agent-pr-gate --repo lentago/<repo> --body <app id>
+```
+
+**Caller.** Trigger it unconditionally, with no `paths:` filter, and keep the
+trigger list below. `workflow_run.workflows` names the repo's own
+`agent-pr-gate` caller workflow (its `name:`). `secrets: inherit` passes the
+environment's secret through. The job is named `post-verdict`, so its Actions
+context is `agent-pr-verdict / post-verdict`; the check the ruleset requires is
+the gate App's `agent-pr-verdict`. Optional inputs: `check_name` (default
+`agent-pr-verdict`) and the same `agent_user_id`, `agent_app_id` and
+`agent_author` as `agent-pr-gate.yml`.
+
+```yaml
+name: agent-pr-verdict
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, ready_for_review, auto_merge_enabled]
+  workflow_run:
+    workflows: [agent-pr-gate]
+    types: [completed]
+  issue_comment:
+    types: [created]
+
+jobs:
+  post-verdict:
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: lentago/shared-workflows/.github/workflows/agent-pr-verdict.yml@v1.7.0
+    secrets: inherit
+```
+
+**What keeps it unfakeable.** These conditions must stay true:
+
+- **The runner App has none of the `checks`, `statuses`, `administration`,
+  `environments` or `secrets` permissions.** It holds write on `contents`,
+  `issues`, `pull_requests` and `workflows`, and read on `metadata`
+  (`GET /apps/lentago-claude-runner`). With `administration` or
+  `environments`, it could widen the environment's branch policy or the
+  ruleset.
+- **The runner App is not a bypass actor on the `main` rulesets**, and `main`
+  accepts changes only through PRs.
+- **The gate App's key exists only as an environment secret.** It is never on
+  the NAS, on a runner LXC, or in the claytonia queue.
+- **The gate App holds Checks read and write only** (Metadata read comes with
+  it), has its webhook off, and is installable on the lentago account only.
+- **This repository's `v*` tags are immutable**, through the `release-tags`
+  ruleset ([ADR-0005](docs/adr/0005-immutable-semver-tags-replace-main-consumption.md),
+  addendum 2026-11-01: update and delete forbidden, no bypass actors). The
+  runner App holds `contents: write` here, and a caller's pin names the
+  workflow file and script that run inside the environment job; the ruleset is
+  what keeps a pinned tag from being re-pointed. The ruleset does not forbid
+  creating a tag, so a tag exists before any caller pins it: never merge a
+  caller pinned to a release that has not been cut.
+
+This repo runs it on its own PRs through
+[`agent-pr-verdict-self.yml`](.github/workflows/agent-pr-verdict-self.yml), the
+pilot. There, the local path ref resolves to the base or default branch, so both
+the workflow and the script come from `main`. The self-caller merges only once
+lentago/.github has created this repo's `agent-pr-gate` environment; requiring
+the check by the gate App's integration ID is that repo's follow-up to #97,
+after this caller is seen posting the verdict.
 
 ### `docs-check.yml`
 
