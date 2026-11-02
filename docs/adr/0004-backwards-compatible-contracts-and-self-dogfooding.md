@@ -74,3 +74,20 @@ demonstrates a limit of self-testing.
 - The #30 incident is the concrete evidence that a self-referential test
   can mask a cross-repo-caller bug; the fix comment in `docs-check.yml`
   records the trap directly at the line it applies to, not only here.
+
+## Addendum (2026-11-02): the #30 fix read an empty value
+
+The fix recorded in Context resolved `github.job_workflow_ref`, but that is
+not a property of the `github` context. It evaluated empty, and the tooling
+checkout then took this repository's default branch. The fatal error went away,
+but every external caller ran `main`'s resolver whatever tag it pinned, which
+ADR-0005's tags were meant to prevent.
+[#95](https://github.com/lentago/shared-workflows/issues/95) moved the checkout
+to `job.workflow_sha` and added a step that checks the commit on every run.
+The self-referential test hid this second bug the same way it hid the first,
+which strengthens the case for the retrospective's second-caller test.
+Before #95 merged, a workflow in this repository called `docs-check.yml` by
+its full name at the fix branch. That separates the reusable's own commit from
+the caller's ref, but it is not a caller in another repository. What covers
+that case is each caller's version-bump PR, which runs the new verify step
+before the caller merges.

@@ -34,7 +34,7 @@ actually runs here.
 | **Advisory (non-blocking) automated review** — decouple "useful signal" automation from "merge gate" automation so a flaky AI call never stalls delivery | [`claude-review.yml`](.github/workflows/claude-review.yml) runs the review step `continue-on-error`, always exits `0`, and posts a soft-fail comment instead of reddening the check |
 | **A required check must be unconditional** — a required status check whose workflow never triggers is held "Expected" forever and deadlocks every non-matching PR | [`docs-check.yml`](.github/workflows/docs-check.yml) documents "no `paths:` filter"; `docs-check / docs-check` is the one required check on this repo's `main` today |
 | **Dogfood a reusable workflow on its own source** — catch a broken reusable in *its own* PR, not only in a downstream caller | [`docs-check-self.yml`](.github/workflows/docs-check-self.yml) calls `uses: ./.github/workflows/docs-check.yml` (local path, not `@main`) so a PR is checked by the version inside that PR |
-| **Ref-resolution correctness for cross-repo checkouts** — a reusable that checks out its own repo must use the caller's pinned ref, not the caller's | [`docs-check.yml`](.github/workflows/docs-check.yml) resolves `github.job_workflow_ref` (not `workflow_ref`); a self-referential test masked the bug for external callers until [#30](https://github.com/lentago/shared-workflows/pull/30) |
+| **Ref-resolution correctness for cross-repo checkouts** — a reusable that checks out its own repo must use the commit the caller pinned, not the caller's ref and not a default branch | [`docs-check.yml`](.github/workflows/docs-check.yml) checks itself out at `job.workflow_sha` and verifies the commit on every run. A self-referential test masked two earlier bugs: `workflow_ref` failed every external caller until [#30](https://github.com/lentago/shared-workflows/pull/30), and #30's `github.job_workflow_ref` evaluated empty, so callers silently ran `main`'s resolver until [#95](https://github.com/lentago/shared-workflows/issues/95) |
 | **One canonical policy source with declared, manually-audited mirrors** — govern org-wide conventions from one file while being explicit about where the text is duplicated and why | [`CLAUDE.md`](CLAUDE.md)'s "Fleet PR-workflow (canonical source)" section names its two mirrors and states the keep-in-sync obligation (manual discipline, not automation) |
 | **Backwards-compatible `workflow_call` contracts** — interface discipline for shared automation: a new *required* input breaks every caller silently | [`CLAUDE.md`](CLAUDE.md) conventions: add inputs as optional with sensible defaults, never required |
 
@@ -247,6 +247,10 @@ jobs:
 
 The link resolver lives at [`ci/check_docs_links.py`](ci/check_docs_links.py) —
 a single, testable source promoted from `lentago/.github`'s `ci/validate.py`.
+Each run checks out the resolver at the commit of the `docs-check.yml` the
+caller pinned, and fails if that commit, or the pinned tag, doesn't match. Its
+log names the commit (`Resolver: ci/check_docs_links.py at <sha>, the commit of
+…@refs/tags/<tag>`).
 Run its test suite locally with `python3 ci/test_check_docs_links.py`. This repo
 also dogfoods the checker on its own markdown via
 [`docs-check-self.yml`](.github/workflows/docs-check-self.yml), which uses the
@@ -474,7 +478,11 @@ markdown](https://github.com/lentago/shared-workflows/pull/29), and
 [#30 docs-check: resolve the tooling ref from
 job_workflow_ref](https://github.com/lentago/shared-workflows/pull/30) — the
 last fixed a cross-repo-caller bug (`job_workflow_ref` vs `workflow_ref`) that a
-self-referential test had masked for every external caller.
+self-referential test had masked for every external caller. That fix read a
+property the `github` context doesn't have. It evaluated empty, so external
+callers ran `main`'s resolver instead of their tag's until
+[#95](https://github.com/lentago/shared-workflows/issues/95) moved to
+`job.workflow_sha` and added a check of the commit on every run.
 
 **Amend the fleet's canonical PR-workflow policy.** The
 [`CLAUDE.md`](CLAUDE.md) "Fleet PR-workflow (canonical source)" section is the

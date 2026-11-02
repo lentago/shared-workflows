@@ -30,15 +30,38 @@ semver tags.
   - This repo runs it on its own PRs through `agent-pr-gate-self.yml`, with the
     script taken from the PR's base commit so a PR can't edit the script that
     checks it. Making the context required is lentago/.github#289.
+  - Its limit is recorded in the README. The runner App holds
+    `workflows: write`, so a PR it opens can add a workflow with a job named
+    like this one that passes, and required contexts are matched by name.
+    Until that permission goes, the gate stops a merge the App attempts by
+    mistake, not one it is trying to force.
 - Internal `render-claude-summary` refs point at `v1.6.0`.
 
-Minor, not patch: a new workflow file. Callers of the other workflows have
-nothing to change.
+### Fixed
 
-The README records the gate's limit. The runner App holds `workflows: write`,
-so a PR it opens can add a workflow with a job named like this one that passes,
-and required contexts are matched by name. Until that permission goes, the gate
-stops a merge the App attempts by mistake, not one it is trying to force.
+- **`docs-check.yml` runs the resolver from the tag the caller pinned (#95).**
+  The tooling checkout read `github.job_workflow_ref`, which is not a property
+  of the `github` context. It evaluated empty, so `actions/checkout` took this
+  repository's default branch. Every caller therefore ran `main`'s
+  `ci/check_docs_links.py`, whatever tag it pinned (ADR-0005). This repo's own
+  self-caller hid the bug, because there an empty ref resolves to the PR under
+  test.
+  - The checkout now uses `job.workflow_repository` at `job.workflow_sha`, the
+    reusable workflow's own commit. If either is empty, the job fails instead
+    of falling back to a default branch.
+  - A new step, "Verify the resolver is the pinned commit", fails the job when
+    the checkout isn't that commit, or when the caller pinned a tag that
+    resolves to another commit. Its log line names the commit and the pinned
+    ref.
+  - No input or job name changed. The only effect for callers is that a tag
+    pin now holds for the resolver too.
+  - A caller keeps running `main`'s resolver until it bumps to this release,
+    because earlier tags carry the old `docs-check.yml`. Each caller's bump PR
+    runs the new verify step before that caller merges.
+
+Minor, not patch, because `agent-pr-gate.yml` is a new workflow file. The
+`docs-check.yml` fix on its own would be a patch. Callers of the other
+workflows have nothing to change.
 
 ## v1.5.1 (2026-11-02)
 

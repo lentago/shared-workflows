@@ -20,8 +20,9 @@
 #
 # The link resolver lives in this repo at ci/check_docs_links.py (a single,
 # testable source — see ci/test_check_docs_links.py). This workflow checks the
-# caller out, checks this repo out alongside it at the same ref, and runs the
-# script against the caller's tree.
+# caller out, checks this repo out alongside it at the commit this workflow file
+# came from (the caller's pinned tag), verifies that commit, and runs the script
+# against the caller's tree.
 # ============================================================================
 
 name: docs-check (reusable)
@@ -50,34 +51,67 @@ jobs:
         with:
           fetch-depth: 1
 
-      # This reusable's workflow_ref looks like
-      #   lentago/shared-workflows/.github/workflows/docs-check.yml@refs/heads/main
-      # Pull the resolver from the same ref the caller invoked, so a caller
-      # pinned to a tag gets the matching script rather than drifting to main.
-      - name: Resolve shared-workflows ref
+      # Pull the resolver from the commit this workflow file came from, so a
+      # caller pinned to a tag runs that tag's resolver, not main's.
+      #
+      # Two earlier versions of this step got it wrong, and both looked fine
+      # from this repo's own self-caller:
+      # - `github.workflow_ref` is the CALLER's entry workflow, so external
+      #   callers asked shared-workflows for their own PR ref and failed
+      #   (`fatal: couldn't find remote ref refs/pull/N/merge`, #30).
+      # - `github.job_workflow_ref` is not a property of the `github` context.
+      #   It evaluated empty, the checkout below got no ref and took this
+      #   repo's default branch, and every caller ran main's resolver whatever
+      #   tag it pinned (#95).
+      # `job.workflow_repository`, `job.workflow_ref` and `job.workflow_sha`
+      # name the reusable workflow's own repository, ref and commit. An empty
+      # value fails the job rather than letting checkout pick a default.
+      - name: Resolve the resolver's commit
         id: swref
         env:
-          # MUST be job_workflow_ref, not workflow_ref. `github.workflow_ref` is the
-          # ENTRY workflow — for a caller in another repo that is
-          # `lentago/<caller>/.github/workflows/docs-check.yml@refs/pull/N/merge`,
-          # so stripping to the ref yields the CALLER's PR ref and the tooling
-          # checkout below then asks shared-workflows for a ref it does not have:
-          #   fatal: couldn't find remote ref refs/pull/N/merge
-          # `github.job_workflow_ref` is this reusable's own ref, which is what the
-          # tooling checkout needs. The distinction is invisible when the reusable is
-          # called from within shared-workflows itself (the caller's ref resolves
-          # fine there), so a self-referential test passes while every cross-repo
-          # caller fails — see the fleet-wide rollout in lentago/.github#57.
-          WORKFLOW_REF: ${{ github.job_workflow_ref }}
-        run: echo "ref=${WORKFLOW_REF##*@}" >> "$GITHUB_OUTPUT"
+          WF_REPO: ${{ job.workflow_repository }}
+          WF_SHA: ${{ job.workflow_sha }}
+        run: |
+          if [[ ! "$WF_SHA" =~ ^[0-9a-f]{40}$ || -z "$WF_REPO" ]]; then
+            echo "::error::docs-check can't tell which commit it runs from (job.workflow_repository '$WF_REPO', job.workflow_sha '$WF_SHA'), and won't fall back to a default branch"
+            exit 1
+          fi
+          echo "repository=$WF_REPO" >> "$GITHUB_OUTPUT"
+          echo "sha=$WF_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Checkout docs-check tooling
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: lentago/shared-workflows
-          ref: ${{ steps.swref.outputs.ref }}
+          repository: ${{ steps.swref.outputs.repository }}
+          ref: ${{ steps.swref.outputs.sha }}
           path: .docs-check-tooling
           fetch-depth: 1
+          persist-credentials: false
+
+      # The proof, on every run: the resolver about to run is the commit this
+      # workflow came from, and when the caller pinned a tag, that tag
+      # resolves to the same commit.
+      - name: Verify the resolver is the pinned commit
+        env:
+          WF_FILE_REF: ${{ job.workflow_ref }}
+          WF_SHA: ${{ steps.swref.outputs.sha }}
+        run: |
+          checked_out=$(git -C .docs-check-tooling rev-parse HEAD)
+          if [[ "$checked_out" != "$WF_SHA" ]]; then
+            echo "::error::the resolver checkout is at $checked_out, not $WF_SHA ($WF_FILE_REF)"
+            exit 1
+          fi
+          pinned=${WF_FILE_REF##*@}
+          if [[ "$pinned" == refs/tags/* ]]; then
+            refs=$(git -C .docs-check-tooling ls-remote origin "$pinned" "$pinned^{}")
+            tag_sha=$(awk -v r="$pinned^{}" '$2 == r {print $1}' <<< "$refs")
+            [[ -n "$tag_sha" ]] || tag_sha=$(awk -v r="$pinned" '$2 == r {print $1}' <<< "$refs")
+            if [[ "$tag_sha" != "$WF_SHA" ]]; then
+              echo "::error::$pinned resolves to '${tag_sha:-nothing}', but this workflow runs from $WF_SHA"
+              exit 1
+            fi
+          fi
+          echo "Resolver: ci/check_docs_links.py at $WF_SHA, the commit of $WF_FILE_REF"
 
       - name: Check relative markdown links
         env:
