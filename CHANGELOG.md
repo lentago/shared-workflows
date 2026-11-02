@@ -32,6 +32,25 @@ semver tags.
     checks it. Making the context required is lentago/.github#289.
 - Internal `render-claude-summary` refs point at `v1.6.0`.
 
+### Fixed
+
+- **`docs-check.yml` runs the resolver from the tag the caller pinned (#95).**
+  The tooling checkout read `github.job_workflow_ref`, which is not a property
+  of the `github` context. It evaluated empty, so `actions/checkout` took this
+  repository's default branch. Every caller therefore ran `main`'s
+  `ci/check_docs_links.py`, whatever tag it pinned (ADR-0005). This repo's own
+  self-caller hid the bug, because there an empty ref resolves to the PR under
+  test.
+  - The checkout now uses `job.workflow_repository` at `job.workflow_sha`, the
+    reusable workflow's own commit. If either is empty, the job fails instead
+    of falling back to a default branch.
+  - A new step, "Verify the resolver is the pinned commit", fails the job when
+    the checkout isn't that commit, or when the caller pinned a tag that
+    resolves to another commit. Its log line names the commit and the pinned
+    ref.
+  - No input or job name changed. The only effect for callers is that a tag
+    pin now holds for the resolver too.
+
 Minor, not patch: a new workflow file. Callers of the other workflows have
 nothing to change.
 
