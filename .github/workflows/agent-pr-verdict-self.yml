@@ -1,0 +1,31 @@
+# ============================================================================
+# agent-pr-verdict (self): post the verdict check on this repo's own PRs
+# ============================================================================
+# The pilot for #97. The local path ref runs the reusable workflow from the
+# commit this caller runs from: the base branch on pull_request_target, the
+# default branch on workflow_run and issue_comment. So on this repo's own PRs,
+# both the workflow and the script (`job.workflow_sha`) come from `main`, and a
+# PR can't change the code that decides it. The trigger list is the one
+# README.md gives callers; `workflow_run` names this repo's agent-pr-gate
+# caller (agent-pr-gate-self.yml, `name: agent-pr-gate`). Requiring the check
+# by the gate App's integration ID is lentago/.github's follow-up to #97.
+# ============================================================================
+
+name: agent-pr-verdict
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, ready_for_review, auto_merge_enabled]
+  workflow_run:
+    workflows: [agent-pr-gate]
+    types: [completed]
+  issue_comment:
+    types: [created]
+
+jobs:
+  post-verdict:
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/agent-pr-verdict.yml
+    secrets: inherit

@@ -28,11 +28,23 @@
 # default branch's automerge policy. Nothing is written. Any API error fails
 # the check.
 #
-# LIMIT: a check like this one is a boundary against the runner App only while
-# the App cannot push changes to workflow files. The App holds `workflows:
-# write`, so a PR it opens can add a workflow whose job reports a passing check
-# under this check's name. Required contexts are matched by name, so that check
-# can satisfy the requirement. See README.md, "agent-pr-gate.yml".
+# LIMIT: this is the accident layer. The runner App holds `workflows: write`,
+# so a PR it opens can add a workflow whose job reports a passing check under
+# this check's name, and every Actions job reports from the same source. This
+# check stops a merge the App attempts by mistake, not one it is trying to
+# force. The boundary is agent-pr-verdict.yml (#97): the same decision, posted
+# as a check run by a separate GitHub App and required by that App's
+# integration ID. See README.md, "agent-pr-gate.yml" and "agent-pr-verdict.yml".
+#
+# IDENTITY BY ID. The PR's author is the runner App when the event's
+# `pull_request.user.id` is the App's bot account (`agent_user_id`), and a
+# cr-automerge record is the App's when the comment's
+# `performed_via_github_app.id` is the App's integration ID (`agent_app_id`).
+# Logins decide nothing: GitHub's APIs spell the App's login two ways, and one
+# of them is a valid login for a human account. `agent_author` stays as an
+# input; it names the App in messages. A caller that sets it to another agent
+# while either ID is still the runner App's default fails the job, rather than
+# gating the runner App and passing its own agent's PRs.
 #
 # The logic lives in ci/agent_pr_gate.py (tests: ci/test_agent_pr_gate.py),
 # checked out from this repository at this workflow file's own commit
@@ -47,9 +59,17 @@ on:
   workflow_call:
     inputs:
       agent_author:
-        description: "REST login of the agent whose PRs are gated."
+        description: "Login of the agent whose PRs are gated. Used in messages only since v1.7.0; identity is agent_user_id and agent_app_id."
         type: string
         default: "lentago-claude-runner[bot]"
+      agent_user_id:
+        description: "Numeric user id of the agent App's bot account. A PR is gated when its author has this id."
+        type: number
+        default: 293961292
+      agent_app_id:
+        description: "Numeric integration id of the agent App. A cr-automerge record counts only when posted through this App."
+        type: number
+        default: 4062202
 
 jobs:
   agent-pr-gate:
@@ -73,14 +93,29 @@ jobs:
         env:
           NUMBER: ${{ github.event.pull_request.number }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
+          AUTHOR_ID: ${{ github.event.pull_request.user.id }}
           AGENT: ${{ inputs.agent_author }}
+          AGENT_ID: ${{ inputs.agent_user_id }}
+          AGENT_APP_ID: ${{ inputs.agent_app_id }}
         run: |
           if [[ -z "$NUMBER" ]]; then
             echo "::error::agent-pr-gate runs on pull_request and pull_request_review events; this event carries no pull request"
             exit 1
           fi
-          if [[ "${AUTHOR,,}" != "${AGENT,,}" ]]; then
-            echo "PR #$NUMBER is authored by $AUTHOR, not $AGENT: nothing to gate."
+          # Until v1.7.0 the login decided. A caller that names another agent by
+          # agent_author alone would now gate the runner App instead and pass its
+          # own agent's PRs here, before the script runs: refuse it. The script
+          # makes the same check (mixed_identity) for the gated path.
+          if [[ "${AGENT,,}" != "lentago-claude-runner[bot]" && ( "$AGENT_ID" == 293961292 || "$AGENT_APP_ID" == 4062202 ) ]]; then
+            echo "::error::agent_author is '$AGENT', but agent_user_id ($AGENT_ID) or agent_app_id ($AGENT_APP_ID) is still the runner App's default: since v1.7.0 the IDs decide, so set agent_user_id and agent_app_id for that agent"
+            exit 1
+          fi
+          if [[ ! "$AUTHOR_ID" =~ ^[0-9]+$ || ! "$AGENT_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::agent-pr-gate can't tell the author (user id '$AUTHOR_ID') from the agent (user id '$AGENT_ID')"
+            exit 1
+          fi
+          if [[ "$AUTHOR_ID" != "$AGENT_ID" ]]; then
+            echo "PR #$NUMBER is authored by $AUTHOR (user $AUTHOR_ID), not $AGENT (user $AGENT_ID): nothing to gate."
             echo "gated=false" >> "$GITHUB_OUTPUT"
           else
             echo "gated=true" >> "$GITHUB_OUTPUT"
@@ -134,7 +169,10 @@ jobs:
           NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
+          AUTHOR_ID: ${{ github.event.pull_request.user.id }}
           AGENT: ${{ inputs.agent_author }}
+          AGENT_USER_ID: ${{ inputs.agent_user_id }}
+          AGENT_APP_ID: ${{ inputs.agent_app_id }}
           ACTION: ${{ github.event.action }}
           ARMED: ${{ github.event.pull_request.auto_merge && 'armed' || '' }}
         run: |
@@ -146,4 +184,6 @@ jobs:
           [[ "$ACTION" == auto_merge_enabled || -n "$ARMED" ]] && WAIT=120
           python3 .agent-pr-gate-tooling/ci/agent_pr_gate.py \
             --repo "$REPO" --pr "$NUMBER" --head-sha "$HEAD_SHA" \
-            --author "$AUTHOR" --agent "$AGENT" --wait-for-marker "$WAIT"
+            --author-id "$AUTHOR_ID" --author-login "$AUTHOR" \
+            --agent-user-id "$AGENT_USER_ID" --agent-app-id "$AGENT_APP_ID" --agent-login "$AGENT" \
+            --wait-for-marker "$WAIT"

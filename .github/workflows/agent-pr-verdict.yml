@@ -1,0 +1,277 @@
+# ============================================================================
+# Reusable: agent-pr-verdict
+# ============================================================================
+# The trusted path of the agent PR gate (#97; lentago/.github ADR-0014). It
+# makes the same decision as agent-pr-gate.yml (ci/agent_pr_gate.py), and posts
+# it as a check run through a separate GitHub App, the gate App. A ruleset can
+# require that check by the gate App's integration ID. Every Actions job reports
+# from the Actions App, so no workflow the runner App adds to a PR can produce
+# it: the runner App's `workflows: write` no longer reaches the requirement.
+#
+# agent-pr-gate.yml stays as the accident layer: quick feedback on every
+# event, and the trigger of this workflow's review path.
+#
+# WHERE THE VERDICT IS COMPUTED. Only in runs whose workflow file and code the
+# PR cannot change. The caller triggers it on:
+#   - pull_request_target: runs the base branch's workflow file.
+#   - workflow_run, on completion of the repo's agent-pr-gate caller: runs the
+#     default branch's workflow file. pull_request_review has no `_target` form
+#     and runs the PR's own workflow file, so reviews reach this path through
+#     the gate's run completing.
+#   - issue_comment (created, on PRs, by the agent's bot account): runs the
+#     default branch's workflow file. The cr-automerge record arriving
+#     re-evaluates the PR, which replaces the gate's 120-second poll on this
+#     path. Other commenters' comments start no job in the environment.
+# The job takes nothing from the triggering event beyond what names the PR:
+# its number, or on workflow_run the completed run's head and repository, used
+# only to look the number up. It then reads the PR's current state through the
+# API, decides, and posts the check run on the PR's current head. It never checks out or runs the PR's code. The
+# script comes from this repository at this workflow file's own commit
+# (`job.workflow_sha`), as in agent-pr-gate.yml and docs-check.yml. Fork PRs
+# also trigger pull_request_target and are safe for the same reason.
+#
+# WHERE THE KEY LIVES. The gate App's private key is a secret of a GitHub
+# environment named `agent-pr-gate` in each gated repo, whose deployment
+# branches are limited to `main` with no admin bypass (lentago/.github
+# `terraform/environments.tf`). The policy is matched against the run's
+# GITHUB_REF: pull_request_target runs with the base branch's ref, workflow_run
+# and issue_comment with the default branch's. A pull_request or
+# pull_request_review run (ref `refs/pull/<n>/merge`), or a workflow the runner
+# App pushes on its own branch, is refused the environment and so the key.
+#
+# GitHub creates an environment with no protection the first time a job names
+# one that does not exist. So the environment must exist, with its branch
+# policy, before any caller references it, and the key is never set into one
+# without that policy. The job checks this itself before minting a token: it
+# reads the environment and refuses one without custom branch policies or
+# with an admin bypass.
+#
+# The job mints an installation token scoped to this one repository and to
+# `checks: write`, and reads PR state with the read-only GITHUB_TOKEN. The
+# token is revoked when the job ends.
+#
+# THE JOB'S OWN RESULT is not the verdict. It succeeds once a verdict is
+# posted, whichever way the verdict went, and fails only when no verdict could
+# be posted: a missing secret or variable, an unreadable PR, a refused check
+# run. The verdict is the check run. (A failing job on workflow_run and
+# issue_comment events would redden the default branch's own check runs.)
+#
+# WHAT KEEPS IT UNFAKEABLE. README.md lists the conditions: the runner App
+# holds none of `checks`, `statuses`, `administration`, `environments` or
+# `secrets`; it is not a bypass actor on the `main` rulesets, and `main`
+# accepts changes only through PRs; the gate App's key exists only as an
+# environment secret.
+#
+# UNCONDITIONAL BY DESIGN, like agent-pr-gate.yml: no `paths:` filter, no
+# draft skip. A required check that never reports holds the PR at "Expected".
+# ============================================================================
+
+name: agent-pr-verdict (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      check_name:
+        description: "Name of the check run the gate App posts. The ruleset requires this name from the gate App's integration ID."
+        type: string
+        default: "agent-pr-verdict"
+      agent_author:
+        description: "Login of the agent whose PRs are gated. Used in messages only; identity is agent_user_id and agent_app_id."
+        type: string
+        default: "lentago-claude-runner[bot]"
+      agent_user_id:
+        description: "Numeric user id of the agent App's bot account. A PR is gated when its author has this id."
+        type: number
+        default: 293961292
+      agent_app_id:
+        description: "Numeric integration id of the agent App. A cr-automerge record counts only when posted through this App."
+        type: number
+        default: 4062202
+
+jobs:
+  post-verdict:
+    name: post-verdict
+    # The three trusted events, narrowed to the activity that can change the
+    # verdict. Reviews arrive as the gate caller's run completing on a
+    # pull_request_review event; the record arrives as a comment by the agent's
+    # bot account (user id, never login) whose first line is the cr-automerge
+    # marker, so no other commenter starts a job in the environment. The script
+    # still checks the comment's performed_via_github_app.id.
+    if: >-
+      github.event_name == 'pull_request_target'
+      || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request_review')
+      || (github.event_name == 'issue_comment' && github.event.issue.pull_request
+          && github.event.comment.user.id == inputs.agent_user_id
+          && startsWith(github.event.comment.body, '<!-- cr-automerge armed '))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: agent-pr-gate
+    permissions:
+      contents: read
+      pull-requests: read
+    # One verdict per PR at a time. A running verdict is never cancelled; a
+    # newer event for the same PR waits for it, then reads the latest state.
+    # (Actions keeps one pending run per group: a third event replaces the
+    # waiting one, which is fine, since the newest run posts last.)
+    concurrency:
+      group: agent-pr-verdict-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Trust this run, and find the PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          WF_FILE_REF: ${{ job.workflow_ref }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          RUN_PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+        run: |
+          # The verdict is computed only from a workflow file the PR can't change:
+          # a branch ref of this repository, never a pull-request merge ref.
+          if [[ "$REF" != refs/heads/* || "$WF_FILE_REF" == *@refs/pull/* ]]; then
+            echo "::error::agent-pr-verdict refuses to run from '$REF' ($WF_FILE_REF): the verdict is computed only from a branch's workflow file"
+            exit 1
+          fi
+          case "$EVENT" in
+            pull_request_target) number=$PR_NUMBER ;;
+            issue_comment) number=$ISSUE_NUMBER ;;
+            workflow_run)
+              number=$RUN_PR_NUMBER
+              # The payload lists no PRs for a head pushed from a fork. Those PRs
+              # can't be the runner App's, but look the PR up anyway so the
+              # verdict stays current.
+              if [[ -z "$number" && "$RUN_HEAD_SHA" =~ ^[0-9a-f]{40}$ && "${RUN_HEAD_REPO,,}" == "${REPO,,}" ]]; then
+                number=$(gh api "repos/$REPO/commits/$RUN_HEAD_SHA/pulls" --jq '[.[] | select(.state == "open")][0].number // empty')
+              fi
+              if [[ -z "$number" ]]; then
+                echo "The completed run ($RUN_HEAD_REPO@${RUN_HEAD_SHA:0:12}) belongs to no open PR of this repository: nothing to decide."
+              fi ;;
+            *) echo "::error::agent-pr-verdict runs on pull_request_target, workflow_run and issue_comment events, not $EVENT"; exit 1 ;;
+          esac
+          if [[ -n "$number" && ! "$number" =~ ^[0-9]+$ ]]; then
+            echo "::error::'$number' is not a pull request number"
+            exit 1
+          fi
+          [[ -n "$number" ]] && echo "Deciding PR #$number from a $EVENT event on $REF."
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      # The script comes from the same commit as this workflow file
+      # (job.workflow_sha), so a caller pinned to a tag runs that tag's script.
+      # An empty value fails the job: with no ref, actions/checkout would
+      # silently take the default branch. Called from this repository's own
+      # workflow, that commit is the base or default branch's, never the PR's.
+      - name: Resolve the script's commit
+        if: steps.pr.outputs.number != ''
+        id: swref
+        env:
+          WF_SHA: ${{ job.workflow_sha }}
+          WF_REPO: ${{ job.workflow_repository }}
+        run: |
+          if [[ ! "$WF_SHA" =~ ^[0-9a-f]{40}$ || -z "$WF_REPO" ]]; then
+            echo "::error::agent-pr-verdict can't tell which commit it runs from (job.workflow_repository '$WF_REPO', job.workflow_sha '$WF_SHA')"
+            exit 1
+          fi
+          echo "Script: $WF_REPO@$WF_SHA"
+          echo "repository=$WF_REPO" >> "$GITHUB_OUTPUT"
+          echo "sha=$WF_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout agent-pr-gate tooling
+        if: steps.pr.outputs.number != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ steps.swref.outputs.repository }}
+          ref: ${{ steps.swref.outputs.sha }}
+          path: .agent-pr-gate-tooling
+          sparse-checkout: ci
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify the script is the pinned commit
+        if: steps.pr.outputs.number != ''
+        env:
+          WF_SHA: ${{ steps.swref.outputs.sha }}
+        run: |
+          checked_out=$(git -C .agent-pr-gate-tooling rev-parse HEAD)
+          if [[ "$checked_out" != "$WF_SHA" ]]; then
+            echo "::error::the tooling checkout is at $checked_out, not $WF_SHA"
+            exit 1
+          fi
+
+      # The key must only ever be reachable through the branch policy. An
+      # environment GitHub auto-created on first reference has no branch policy
+      # and an admin bypass; refuse to mint a token in one. The branch patterns
+      # themselves are Terraform's (lentago/.github terraform/environments.tf).
+      - name: Refuse an unprotected environment
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          env_json=$(gh api "repos/$REPO/environments/agent-pr-gate") || {
+            echo "::error::the agent-pr-gate environment can't be read, so its branch policy can't be confirmed; no verdict is posted"
+            exit 1
+          }
+          # Compare explicitly: jq's `//` treats `false` as absent, so
+          # `.can_admins_bypass // true` would read a protected environment's
+          # `false` as `true`. Anything but the exact protected value refuses.
+          custom=$(jq -r 'if .deployment_branch_policy.custom_branch_policies == true then "true" else "false" end' <<<"$env_json")
+          bypass=$(jq -r 'if .can_admins_bypass == false then "false" else "true" end' <<<"$env_json")
+          if [[ "$custom" != "true" || "$bypass" != "false" ]]; then
+            echo "::error::the agent-pr-gate environment is unprotected (custom branch policies: $custom, admin bypass: $bypass); it must be created by lentago/.github's Terraform, with deployment branches limited to main and no admin bypass, before any caller references it"
+            exit 1
+          fi
+          echo "agent-pr-gate environment: custom branch policies, no admin bypass."
+
+      # Both must be present before a token is minted, so a missing one fails
+      # with its name rather than with the token action's generic error.
+      - name: Check the gate App's environment secret and variable
+        if: steps.pr.outputs.number != ''
+        env:
+          KEY_SET: ${{ secrets.AGENT_PR_GATE_APP_KEY != '' }}
+          APP_ID: ${{ vars.AGENT_PR_GATE_APP_ID }}
+        run: |
+          if [[ "$KEY_SET" != "true" ]]; then
+            echo "::error::the agent-pr-gate environment has no AGENT_PR_GATE_APP_KEY secret, so no verdict can be posted"
+            exit 1
+          fi
+          if [[ -z "$APP_ID" ]]; then
+            echo "::error::the agent-pr-gate environment has no AGENT_PR_GATE_APP_ID variable, so no verdict can be posted"
+            exit 1
+          fi
+
+      # An installation token of the gate App, for this repository only, with
+      # only `checks: write` (and the metadata read that comes with every
+      # token). The action revokes it when the job ends. `client-id` takes the
+      # App's numeric ID or its client ID: both are valid JWT issuers.
+      - name: Mint the gate App's token
+        if: steps.pr.outputs.number != ''
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.AGENT_PR_GATE_APP_ID }}
+          private-key: ${{ secrets.AGENT_PR_GATE_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-checks: write
+
+      - name: Decide, and post the verdict
+        if: steps.pr.outputs.number != ''
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AGENT_PR_GATE_CHECK_TOKEN: ${{ steps.token.outputs.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ steps.pr.outputs.number }}
+          CHECK_NAME: ${{ inputs.check_name }}
+          AGENT: ${{ inputs.agent_author }}
+          AGENT_USER_ID: ${{ inputs.agent_user_id }}
+          AGENT_APP_ID: ${{ inputs.agent_app_id }}
+        run: |
+          python3 .agent-pr-gate-tooling/ci/agent_pr_gate.py \
+            --repo "$REPO" --pr "$NUMBER" --verdict "$CHECK_NAME" \
+            --agent-user-id "$AGENT_USER_ID" --agent-app-id "$AGENT_APP_ID" --agent-login "$AGENT"

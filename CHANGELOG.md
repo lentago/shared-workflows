@@ -5,6 +5,77 @@
 Releases are cut per [RELEASING.md](RELEASING.md); callers pin to immutable
 semver tags.
 
+## v1.7.0 (unreleased)
+
+### Added
+
+- **`agent-pr-verdict.yml`, the agent PR gate's trusted path (#97).** v1.6.0's
+  `agent-pr-gate.yml` runs as an Actions job, and the runner App holds
+  `workflows: write`, so a PR it opens could add a job that reports a passing
+  check under the gate's name from the same source. The 2026-11-02 decision on
+  #84 keeps that permission and adds a check the runner App cannot produce.
+  - The verdict is the same decision as `agent-pr-gate.yml`, through the same
+    `ci/agent_pr_gate.py`, posted as a check run named `agent-pr-verdict` by a
+    second GitHub App, the gate App. The ruleset requires it by the gate App's
+    integration ID, which no Actions job reports from.
+  - It is computed only in runs whose workflow file and code the PR cannot
+    change: `pull_request_target` (the base branch's file), `workflow_run` on
+    completion of the repo's `agent-pr-gate` caller (the default branch's
+    file; reviews arrive this way, since `pull_request_review` has no `_target`
+    form), and `issue_comment` for the cr-automerge record (the default
+    branch's file; this replaces the gate's 120-second poll on that path). The
+    job takes only the PR number from the event, reads the PR's current state
+    with the read-only `GITHUB_TOKEN`, and posts on the PR's current head. It
+    never checks out or runs the PR's code.
+  - The gate App's key is the `AGENT_PR_GATE_APP_KEY` secret of an
+    `agent-pr-gate` environment, one per gated repo, with deployment branches
+    limited to `main` and no admin bypass; `AGENT_PR_GATE_APP_ID` is the
+    environment's variable. The job mints an installation token for its one
+    repository with `checks: write` only, revoked when the job ends. A run
+    from a pull-request merge ref, or from a branch the runner App pushed, is
+    refused the environment. Because GitHub auto-creates an unprotected
+    environment on first reference, the job reads the environment before
+    minting a token and refuses one without custom branch policies or with an
+    admin bypass; the environment is created by Terraform before any caller
+    references it.
+  - The job's own result says whether a verdict was posted; the verdict is the
+    check run. A missing secret or variable, an unreadable PR, or a refused
+    check run fails the job, and a PR with no verdict on its head stays
+    blocked.
+  - The README lists the conditions that keep it unfakeable, the environment,
+    secret and variable names, and the caller snippet. This repo runs it on its
+    own PRs through `agent-pr-verdict-self.yml`, the pilot. Creating the
+    environment and requiring the check are lentago/.github's follow-up.
+
+### Changed
+
+- **`agent-pr-gate.yml` and `ci/agent_pr_gate.py` identify the runner App by
+  numeric ID, never by login (#97).** REST reports the App as
+  `lentago-claude-runner[bot]` and GraphQL as `lentago-claude-runner`, which is
+  also a valid login for a human account. The PR's author is matched on the
+  App's bot-account user ID (`pull_request.user.id`), and a cr-automerge
+  record on the comment's `performed_via_github_app.id`, the App's
+  integration ID.
+  - New optional inputs `agent_user_id` (default `293961292`) and
+    `agent_app_id` (default `4062202`) on both workflows. `agent_author` stays
+    as an input; it now names the App in messages only. A caller that sets it
+    to another agent while either ID is still the default fails the job,
+    rather than gating the runner App and passing its own agent's PRs: set
+    `agent_user_id` and `agent_app_id` for that agent.
+  - The script's gate-mode arguments are `--author-id` and `--author-login`
+    in place of `--author`, with `--agent-user-id`, `--agent-app-id` and
+    `--agent-login` in place of `--agent`. The script ships with the workflow
+    at the same commit, so no caller runs a mismatched pair.
+  - A human-authored PR still passes without an API call: the job compares
+    the event's author ID to the input before anything else.
+
+Minor, not patch, because `agent-pr-verdict.yml` is a new workflow file and
+both workflows gain inputs. Callers of `agent-pr-gate.yml` that use the
+defaults, which is every caller in the fleet, have nothing to change; the only
+effect for them is that identity no longer depends on how an API spells a
+login. A caller that named another agent by `agent_author` alone fails loudly
+until it sets that agent's IDs, rather than silently passing that agent's PRs.
+
 ## v1.6.0 (2026-11-02)
 
 ### Added

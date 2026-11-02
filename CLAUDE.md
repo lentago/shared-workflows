@@ -33,7 +33,8 @@ and [RELEASING.md](RELEASING.md)):
 | `docs-check.yml` | Relative-markdown-link resolver; unconditional so it can be a required check | intended fleet-wide (adoption pending) |
 | `tf-lint.yml` | Terraform quality gates: fmt, validate (no-backend), tflint, trivy config; per-gate toggles | `solidago`, `kalmia`, `claytonia`, `drosera`, `.github` (adoption pending) |
 | `site-deploy.yml` | Astro site → ECR → ECS Fargate; includes Trivy scan + SLSA L3 attestation; callers migrate one at a time | `site-lentago-dev`, `site-icecreamtofightwith-com`, `site-pondviewlane-com` (pending migration) |
-| `agent-pr-gate.yml` | Required check (`.github` ADR-0014): human-authored PRs pass at once; a runner-App PR needs an approval on its head from a human with write access, or a `cr-automerge` record for its head under a rule it still meets | this repo (self-caller); fleet rollout in lentago/.github#289 |
+| `agent-pr-gate.yml` | The accident layer of the agent PR gate (`.github` ADR-0014): human-authored PRs pass at once; a runner-App PR needs an approval on its head from a human with write access, or a `cr-automerge` record for its head under a rule it still meets. Identity by user ID and App ID, never login | this repo (self-caller); fleet rollout in lentago/.github#289 |
+| `agent-pr-verdict.yml` | The trusted path (#97): the same decision, computed only on `pull_request_target`, `workflow_run` and `issue_comment` runs, posted as a check run by the gate App from a `main`-only `agent-pr-gate` environment, so the ruleset can require it by that App's integration ID | this repo (self-caller, the pilot); fleet rollout follows lentago/.github#289 |
 
 `docs-check.yml` runs the resolver in `ci/check_docs_links.py` (tested by
 `ci/test_check_docs_links.py`) against the caller's tree. It must be triggered

@@ -5,6 +5,8 @@ Self-contained, no pytest dependency. Run: python3 ci/test_agent_pr_gate.py
 Exit status is 0 only when every case passes.
 """
 import base64
+import contextlib
+import io
 import json
 import os
 import sys
@@ -15,6 +17,8 @@ import agent_pr_gate as gate  # noqa: E402
 
 REPO = "lentago/example"
 AGENT = gate.DEFAULT_AGENT
+AGENT_USER = {"login": AGENT.login, "id": AGENT.user_id, "type": "Bot"}
+CHRIS = {"login": "cpitzi", "id": 47896168, "type": "User"}
 HEAD = "a" * 40
 OLD = "b" * 40
 NEW = "c" * 40
@@ -29,28 +33,42 @@ def review(login, state, commit=HEAD, kind="User"):
     return {"user": {"login": login, "type": kind}, "state": state, "commit_id": commit}
 
 
-def marker(rule="briefing", head=HEAD, by=AGENT, tail="\nAuto-merge armed by `cr-automerge`."):
-    return {"user": {"login": by}, "body": "<!-- cr-automerge armed rule=%s head=%s -->%s" % (rule, head, tail)}
+def marker(rule="briefing", head=HEAD, by=AGENT_USER, app=AGENT.app_id,
+           tail="\nAuto-merge armed by `cr-automerge`."):
+    """A cr-automerge record. `app` is the integration id the comment was posted through, or None."""
+    comment = {"user": by, "body": "<!-- cr-automerge armed rule=%s head=%s -->%s" % (rule, head, tail)}
+    if app is not None:
+        comment["performed_via_github_app"] = {"id": app, "slug": "lentago-claude-runner"}
+    return comment
 
 
 class FakeGitHub:
     def __init__(self, reviews=(), comments=(), perms=None, policy=None, pr=None, files=(),
-                 heads=None, late_comments=None):
+                 heads=None, late_comments=None, post_error=None):
         self.reviews = list(reviews)
         self.comments = list(comments)
         self.perms = perms if perms is not None else {"chris": "admin"}
         self.policy = policy
         self.pr = {
             "state": "open", "draft": False, "title": "briefing: 2026-11-02",
-            "base": {"ref": "main"}, "user": {"login": AGENT},
+            "base": {"ref": "main"}, "user": dict(AGENT_USER),
             "head": {"sha": HEAD, "repo": {"full_name": REPO}},
         }
         self.pr.update(pr or {})
         self.files = list(files) if files else [{"filename": "briefings/2026-11-02.md"}]
         self.heads = list(heads or [])  # successive head SHAs for each PR read
         self.late_comments = late_comments  # comments that appear after the first poll
+        self.post_error = post_error
         self.comment_reads = 0
         self.calls = []
+        self.posts = []
+
+    def post(self, path, body):
+        self.calls.append("POST " + path)
+        if self.post_error:
+            raise RuntimeError(self.post_error)
+        self.posts.append((path, body))
+        return {"html_url": "https://github.com/%s/runs/%d" % (REPO, len(self.posts))}
 
     def get(self, path):
         self.calls.append(path)
@@ -85,7 +103,7 @@ class FakeGitHub:
         return self.perms.get(login, "none")
 
 
-def run(fake, author=AGENT, head=HEAD, wait=0):
+def run(fake, author=AGENT_USER, head=HEAD, wait=0):
     sleeps = []
     passed, msg = gate.evaluate(fake, REPO, 7, head, author, AGENT, wait, sleep=sleeps.append)
     return passed, msg, sleeps
@@ -97,16 +115,65 @@ POLICY = {"rules": {"briefing": RULE}}
 class HumanAuthored(unittest.TestCase):
     def test_passes_without_reading_anything(self):
         fake = FakeGitHub()
-        passed, msg, _ = run(fake, author="cpitzi")
+        passed, msg, _ = run(fake, author=CHRIS)
         self.assertTrue(passed)
-        self.assertIn("nothing to gate", msg)
+        self.assertIn("authored by cpitzi, not %s: nothing to gate" % AGENT.login, msg)
         self.assertEqual(fake.calls, [])
 
     def test_other_bots_pass(self):
-        self.assertTrue(run(FakeGitHub(), author="dependabot[bot]")[0])
+        self.assertTrue(run(FakeGitHub(), author={"login": "dependabot[bot]", "id": 49699333, "type": "Bot"})[0])
 
-    def test_agent_login_compare_ignores_case(self):
-        self.assertFalse(run(FakeGitHub(), author="Lentago-Claude-Runner[bot]")[0])
+    def test_message_without_a_login_names_the_user_id(self):
+        _, msg, _ = run(FakeGitHub(), author={"id": 47896168})
+        self.assertIn("authored by user 47896168", msg)
+
+
+class Identity(unittest.TestCase):
+    """The runner App is matched on numeric ids, never on a login (#97)."""
+
+    def test_author_is_matched_on_user_id_not_login(self):
+        # GraphQL reports the App as `lentago-claude-runner`, which a human account could also be.
+        impostor = {"login": "lentago-claude-runner", "id": 1, "type": "User"}
+        passed, msg, _ = run(FakeGitHub(), author=impostor)
+        self.assertTrue(passed)
+        self.assertIn("nothing to gate", msg)
+        # The App under any login spelling is still the App.
+        self.assertFalse(run(FakeGitHub(), author={"login": "lentago-claude-runner", "id": AGENT.user_id})[0])
+        self.assertFalse(run(FakeGitHub(), author={"login": "Lentago-Claude-Runner[bot]", "id": AGENT.user_id})[0])
+
+    def test_unknown_author_id_fails_closed(self):
+        for author in (None, {}, {"login": AGENT.login}, {"login": AGENT.login, "id": "293961292"}):
+            passed, msg, _ = run(FakeGitHub(), author=author)
+            self.assertFalse(passed, author)
+            self.assertIn("user id is unknown", msg)
+
+    def test_marker_is_matched_on_the_app_id_not_the_login(self):
+        # The App's own login on a comment that no App posted: a human-looking forgery.
+        fake = FakeGitHub(comments=[marker(app=None)], policy=POLICY)
+        passed, msg, _ = run(fake)
+        self.assertFalse(passed)
+        self.assertNotIn("cr-automerge", msg)
+        # Another App, same login text.
+        self.assertFalse(run(FakeGitHub(comments=[marker(app=15368)], policy=POLICY))[0])
+        # The runner App, whatever login the API reports for it.
+        by = {"login": "lentago-claude-runner", "id": AGENT.user_id, "type": "Bot"}
+        self.assertTrue(run(FakeGitHub(comments=[marker(by=by)], policy=POLICY))[0])
+
+    def test_routine_exception_requires_the_app_as_author_by_id(self):
+        pr = {"user": {"login": AGENT.login, "id": 2, "type": "Bot"}}
+        _, msg, _ = run(FakeGitHub(comments=[marker()], policy=POLICY, pr=pr))
+        self.assertIn("not authored by %s (user id %d)" % (AGENT.login, AGENT.user_id), msg)
+
+    def test_custom_identity(self):
+        other = gate.Agent(user_id=5, app_id=6, login="other-app[bot]")
+        fake = FakeGitHub(comments=[marker(by={"login": "other-app[bot]", "id": 5}, app=6)], policy=POLICY,
+                          pr={"user": {"login": "other-app[bot]", "id": 5}})
+        passed, msg = gate.evaluate(fake, REPO, 7, HEAD, {"login": "other-app[bot]", "id": 5}, other)
+        self.assertTrue(passed, msg)
+        # The default App's PR is nothing to gate under that identity.
+        passed, msg = gate.evaluate(FakeGitHub(), REPO, 7, HEAD, AGENT_USER, other)
+        self.assertTrue(passed)
+        self.assertIn("not other-app[bot]", msg)
 
 
 class Approval(unittest.TestCase):
@@ -186,12 +253,12 @@ class Routine(unittest.TestCase):
         self.assertTrue(run(fake)[0])
 
     def test_marker_from_anyone_else_is_ignored(self):
-        passed, msg, _ = run(FakeGitHub(comments=[marker(by="mallory")], policy=POLICY))
+        passed, msg, _ = run(FakeGitHub(comments=[marker(by={"login": "mallory", "id": 3}, app=None)], policy=POLICY))
         self.assertFalse(passed)
         self.assertNotIn("cr-automerge", msg)
 
     def test_marker_must_be_the_first_line(self):
-        fake = FakeGitHub(comments=[{"user": {"login": AGENT},
+        fake = FakeGitHub(comments=[{"user": AGENT_USER, "performed_via_github_app": {"id": AGENT.app_id},
                                      "body": "hello\n<!-- cr-automerge armed rule=briefing head=%s -->" % HEAD}],
                           policy=POLICY)
         self.assertFalse(run(fake)[0])
@@ -311,7 +378,7 @@ class Main(unittest.TestCase):
         self.assertNotIn("\n", msg)
 
     def test_output_is_one_line(self):
-        import contextlib, io
+
         real = gate.evaluate
         gate.evaluate = lambda *a, **k: (False, "title 'x\n::notice::forged'\r\x1b")
         out = io.StringIO()
@@ -320,7 +387,7 @@ class Main(unittest.TestCase):
         os.environ.pop("GITHUB_STEP_SUMMARY", None)
         try:
             with contextlib.redirect_stdout(out):
-                rc = gate.main(["--repo", REPO, "--pr", "7", "--head-sha", HEAD, "--author", AGENT])
+                rc = gate.main(["--repo", REPO, "--pr", "7", "--head-sha", HEAD, "--author-id", str(AGENT.user_id)])
         finally:
             gate.evaluate = real
             os.environ.clear()
@@ -336,11 +403,191 @@ class Main(unittest.TestCase):
         os.environ.clear()
         os.environ.update(env)
         try:
-            rc = gate.main(["--repo", REPO, "--pr", "7", "--head-sha", HEAD, "--author", AGENT])
+            rc = gate.main(["--repo", REPO, "--pr", "7", "--head-sha", HEAD, "--author-id", str(AGENT.user_id)])
         finally:
             os.environ.clear()
             os.environ.update(old)
         self.assertEqual(rc, 1)
+
+    def test_another_agent_named_by_login_alone_fails_closed(self):
+        # v1.6.0 gated on the login. A caller naming another agent by login
+        # alone must not silently gate the runner App and pass its own agent.
+        old = os.environ.copy()
+        os.environ["GITHUB_TOKEN"] = "t"
+        try:
+            for extra in ([], ["--agent-user-id", "5"], ["--agent-app-id", "6"]):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    rc = gate.main(["--repo", REPO, "--pr", "7", "--head-sha", HEAD, "--author-id", "5",
+                                    "--agent-login", "other-agent[bot]"] + extra)
+                self.assertEqual(rc, 2, extra)
+                self.assertTrue(out.getvalue().startswith("::error::"), extra)
+                self.assertIn("agent_user_id and agent_app_id", out.getvalue())
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def test_another_agent_with_its_own_ids_is_accepted(self):
+        agent = gate.Agent(5, 6, "other-agent[bot]")
+        self.assertEqual(gate.mixed_identity(agent), "")
+        self.assertEqual(gate.mixed_identity(gate.DEFAULT_AGENT), "")
+        self.assertEqual(gate.mixed_identity(gate.Agent(5, 6, "LENTAGO-claude-runner[bot]")), "")
+
+    def test_gate_mode_needs_a_head_and_an_author_id(self):
+        for argv in (["--head-sha", HEAD], ["--author-id", "1"], []):
+            with self.assertRaises(SystemExit) as cm:
+                with contextlib.redirect_stderr(io.StringIO()):
+                    gate.main(["--repo", REPO, "--pr", "7"] + argv)
+            self.assertEqual(cm.exception.code, 2)
+
+
+class Verdict(unittest.TestCase):
+    """`--verdict NAME`: read the PR, decide, post a check run with the gate App's token."""
+
+    def setUp(self):
+        self.old_env = os.environ.copy()
+        os.environ.update({"GITHUB_TOKEN": "read-token", gate.CHECK_TOKEN_VAR: "check-token",
+                           "GITHUB_RUN_ID": "42", "GITHUB_SERVER_URL": "https://github.com",
+                           "GITHUB_REPOSITORY": REPO})
+        os.environ.pop("GITHUB_STEP_SUMMARY", None)
+        self.real_github = gate.GitHub
+        self.clients = []  # (token, fake) in construction order
+
+    def tearDown(self):
+        gate.GitHub = self.real_github
+        os.environ.clear()
+        os.environ.update(self.old_env)
+
+    def install(self, fake):
+        clients = self.clients
+
+        def make(token, api_url="https://api.github.com"):
+            clients.append((token, api_url))
+            return fake
+        gate.GitHub = make
+        return fake
+
+    def verdict(self, fake, argv=()):
+        self.install(fake)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = gate.main(["--repo", REPO, "--pr", "7", "--verdict", "agent-pr-verdict"] + list(argv))
+        return rc, out.getvalue()
+
+    def test_human_pr_posts_success_from_one_pr_read(self):
+        fake = FakeGitHub(pr={"user": CHRIS})
+        rc, out = self.verdict(fake)
+        self.assertEqual(rc, 0)
+        self.assertEqual(fake.calls, ["repos/%s/pulls/7" % REPO, "POST repos/%s/check-runs" % REPO])
+        (path, body), = fake.posts
+        self.assertEqual(body["name"], "agent-pr-verdict")
+        self.assertEqual(body["head_sha"], HEAD)
+        self.assertEqual((body["status"], body["conclusion"]), ("completed", "success"))
+        self.assertEqual(body["details_url"], "https://github.com/%s/actions/runs/42" % REPO)
+        self.assertEqual(body["external_id"], "pr-7")
+        self.assertIn("nothing to gate", body["output"]["summary"])
+        self.assertTrue(out.startswith("agent-pr-verdict: pass on PR #7 head %s" % HEAD[:12]), out)
+
+    def test_runner_pr_without_approval_posts_failure_and_exits_zero(self):
+        fake = FakeGitHub()
+        rc, out = self.verdict(fake)
+        self.assertEqual(rc, 0, "the verdict is the check run; the job only reports that one was posted")
+        (_, body), = fake.posts
+        self.assertEqual(body["conclusion"], "failure")
+        self.assertIn("needs an approving review on head %s" % HEAD[:12], body["output"]["summary"])
+        self.assertTrue(out.startswith("::warning::agent-pr-verdict: fail"), out)
+
+    def test_approval_on_the_current_head_posts_success(self):
+        fake = FakeGitHub(reviews=[review("chris", "APPROVED")])
+        rc, _ = self.verdict(fake)
+        self.assertEqual(rc, 0)
+        self.assertEqual(fake.posts[0][1]["conclusion"], "success")
+
+    def test_head_and_author_come_from_the_api_not_the_arguments(self):
+        # The PR's current head is NEW; an approval on HEAD is stale.
+        fake = FakeGitHub(reviews=[review("chris", "APPROVED", commit=HEAD)], pr={"head": {"sha": NEW, "repo": {"full_name": REPO}}})
+        rc, _ = self.verdict(fake)
+        self.assertEqual(rc, 0)
+        (_, body), = fake.posts
+        self.assertEqual(body["head_sha"], NEW)
+        self.assertEqual(body["conclusion"], "failure")
+        self.assertIn("chris approved %s, an older head" % HEAD[:12], body["output"]["summary"])
+
+    def test_check_run_is_posted_with_the_check_token_and_reads_with_the_read_token(self):
+        self.verdict(FakeGitHub())
+        self.assertEqual([t for t, _ in self.clients], ["read-token", "check-token"])
+
+    def test_missing_check_token_fails_before_reading_anything(self):
+        os.environ.pop(gate.CHECK_TOKEN_VAR)
+        fake = FakeGitHub()
+        rc, out = self.verdict(fake)
+        self.assertEqual(rc, 1)
+        self.assertEqual(fake.calls, [])
+        self.assertIn("::error::", out)
+        self.assertIn(gate.CHECK_TOKEN_VAR, out)
+
+    def test_unreadable_pr_posts_nothing_and_fails(self):
+        class Broken(FakeGitHub):
+            def get(self, path):
+                raise RuntimeError("GET %s: HTTP 500" % path)
+        fake = Broken()
+        rc, out = self.verdict(fake)
+        self.assertEqual(rc, 1)
+        self.assertEqual(fake.posts, [])
+        self.assertIn("::error::", out)
+        self.assertIn("HTTP 500", out)
+
+    def test_api_error_after_the_pr_read_posts_a_failure_on_the_head_read(self):
+        class Flaky(FakeGitHub):
+            def paginate(self, path):
+                raise RuntimeError("GET %s: HTTP 502" % path)
+        fake = Flaky()
+        rc, out = self.verdict(fake)
+        self.assertEqual(rc, 0)
+        (_, body), = fake.posts
+        self.assertEqual((body["head_sha"], body["conclusion"]), (HEAD, "failure"))
+        self.assertIn("could not read the PR's state", body["output"]["summary"])
+        self.assertIn("HTTP 502", body["output"]["summary"])
+        self.assertTrue(out.startswith("::warning::"), out)
+
+    def test_marker_with_a_null_app_is_not_the_runners(self):
+        comment = marker(app=None)
+        comment["performed_via_github_app"] = None
+        fake = FakeGitHub(comments=[comment], policy=POLICY)
+        self.verdict(fake)
+        self.assertEqual(fake.posts[0][1]["conclusion"], "failure")
+        self.assertNotIn("cr-automerge", fake.posts[0][1]["output"]["summary"])
+
+    def test_failed_post_fails_the_job(self):
+        fake = FakeGitHub(pr={"user": CHRIS}, post_error="POST check-runs: HTTP 403")
+        rc, out = self.verdict(fake)
+        self.assertEqual(rc, 1)
+        self.assertIn("::error::", out)
+        self.assertIn("could not be posted", out)
+        self.assertIn("HTTP 403", out)
+
+    def test_output_is_one_line_per_message(self):
+        fake = FakeGitHub(comments=[marker()], policy=POLICY,
+                          files=[{"filename": "briefings/x.md\n::warning::forged"}])
+        rc, out = self.verdict(fake)
+        self.assertEqual(rc, 0)
+        self.assertEqual(out.count("\n"), 1)
+        self.assertNotIn("\n::", out)
+        self.assertNotIn("\n", fake.posts[0][1]["output"]["summary"])
+
+    def test_verdict_mode_rejects_gate_mode_arguments(self):
+        for argv in (["--head-sha", HEAD], ["--author-id", "1"]):
+            with self.assertRaises(SystemExit) as cm:
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.verdict(FakeGitHub(), argv)
+            self.assertEqual(cm.exception.code, 2)
+
+    def test_custom_identity_arguments_reach_the_decision(self):
+        fake = FakeGitHub(pr={"user": {"login": "other-app[bot]", "id": 5}})
+        rc, _ = self.verdict(fake, ["--agent-user-id", "5", "--agent-app-id", "6", "--agent-login", "other-app[bot]"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(fake.posts[0][1]["conclusion"], "failure")
+        self.assertIn("Runner-App PR #7", fake.posts[0][1]["output"]["summary"])
 
 
 if __name__ == "__main__":
