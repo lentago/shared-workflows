@@ -12,6 +12,13 @@
 # discovery would skip it silently. A new ci/test_*.py is picked up without
 # editing this file, and the job fails if the glob matches nothing.
 #
+# A regression net, not a boundary. The job runs the PR's own code and tests,
+# so a green run shows the PR's tests agree with its code; it proves nothing
+# against a PR that edits both. The agent PR gate's trust comes from elsewhere:
+# agent-pr-gate-self.yml takes its script from the PR's base commit, and
+# agent-pr-verdict.yml from `main`. This job holds no secrets and only
+# `contents: read`.
+#
 # Not a reusable workflow: these are this repo's tests, and callers never run
 # them. Unconditional, with no `paths:` filter, so its context (`unit-tests`,
 # the job's name; the UI shows it as "ci-tests / unit-tests") can become a
