@@ -42,6 +42,12 @@ with **no `paths:` filter** — it's designed as a required status check, and a
 required check that never triggers deadlocks non-matching PRs
 (`fleet-ops/required-checks.json`).
 
+`ci-tests.yml` runs every `ci/test_*.py` as a script on each of this repo's
+PRs (#99). It is not a reusable workflow. A new test file needs only the
+`test_` prefix and a nonzero exit status on failure, and must keep its
+expected `::` output off stdout, since a stray `::error::` line becomes an
+annotation on a green run.
+
 ## Architecture / load-bearing knowledge
 
 **Caller flow** for each workflow lives at the bottom of `README.md` — the
