@@ -34,7 +34,9 @@
 #
 # The logic lives in ci/agent_pr_gate.py (tests: ci/test_agent_pr_gate.py),
 # checked out from this repository at the ref the caller pinned, the same way
-# docs-check.yml fetches its resolver.
+# docs-check.yml fetches its resolver. On this repository's own PRs it comes
+# from the PR's base commit instead, so a PR can't edit the script that checks
+# it.
 # ============================================================================
 
 name: agent-pr-gate (reusable)
@@ -84,12 +86,23 @@ jobs:
 
       # Same ref the caller invoked (job_workflow_ref, not workflow_ref; see
       # docs-check.yml), so a caller pinned to a tag runs that tag's script.
+      # One exception: called from this repo's own PR (`uses: ./…`, so the ref
+      # is the PR's merge ref), the script comes from the PR's base commit. A
+      # PR here must not be checked by a copy of the script it can edit.
       - name: Resolve shared-workflows ref
         if: steps.who.outputs.gated == 'true'
         id: swref
         env:
           WORKFLOW_REF: ${{ github.job_workflow_ref }}
-        run: echo "ref=${WORKFLOW_REF##*@}" >> "$GITHUB_OUTPUT"
+          REPO: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          ref=${WORKFLOW_REF##*@}
+          if [[ "${REPO,,}" == lentago/shared-workflows && "$ref" == refs/pull/* ]]; then
+            echo "Called from this repository's own PR: the deciding script comes from base commit $BASE_SHA."
+            ref=$BASE_SHA
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
 
       - name: Checkout agent-pr-gate tooling
         if: steps.who.outputs.gated == 'true'

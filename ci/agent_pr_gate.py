@@ -209,7 +209,7 @@ def rule_holds(gh, repo, number, head, agent, rule_name):
         return "the PR touches %d paths and rule %r allows %d" % (len(files), rule_name, max_files)
     outside = [p for p in files if not any(g.fullmatch(p) for g in globs)]
     if outside:
-        return "%s is outside rule %r" % (outside[0], rule_name)
+        return "%r is outside rule %r" % (outside[0], rule_name)
     # The files listed must be this head's.
     now = (gh.get("repos/%s/pulls/%d" % (repo, number)).get("head") or {}).get("sha")
     if now != head:
@@ -275,6 +275,9 @@ def main(argv=None):
     except Exception as e:  # fail closed
         passed, message = False, "PR #%d: the gate could not read the PR's state (%s)." % (args.pr, e)
 
+    # One line, whatever a PR put in its title or paths: a line break would let
+    # PR-controlled text start a workflow command of its own.
+    message = re.sub(r"[\x00-\x1f\x7f]", " ", message)
     print("%s%s" % ("" if passed else "::error::", message))
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:

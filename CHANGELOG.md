@@ -27,8 +27,9 @@ semver tags.
     failed API call.
   - The token is read-only: `contents`, `pull-requests` and `issues` read. The
     logic is in `ci/agent_pr_gate.py`, with tests in `ci/test_agent_pr_gate.py`.
-  - This repo runs it on its own PRs through `agent-pr-gate-self.yml`. Making
-    the context required is lentago/.github#289.
+  - This repo runs it on its own PRs through `agent-pr-gate-self.yml`, with the
+    script taken from the PR's base commit so a PR can't edit the script that
+    checks it. Making the context required is lentago/.github#289.
 - Internal `render-claude-summary` refs point at `v1.6.0`.
 
 Minor, not patch: a new workflow file. Callers of the other workflows have

@@ -221,7 +221,7 @@ class Routine(unittest.TestCase):
                           files=[{"filename": "briefings/x.md"}, {"filename": ".github/workflows/ci.yml"}])
         passed, msg, _ = run(fake)
         self.assertFalse(passed)
-        self.assertIn(".github/workflows/ci.yml is outside rule", msg)
+        self.assertIn("'.github/workflows/ci.yml' is outside rule", msg)
 
     def test_single_star_stays_in_its_directory(self):
         fake = FakeGitHub(comments=[marker()], policy=POLICY, files=[{"filename": "briefings/sub/x.md"}])
@@ -234,7 +234,7 @@ class Routine(unittest.TestCase):
     def test_rename_old_path_must_match_too(self):
         fake = FakeGitHub(comments=[marker()], policy=POLICY,
                           files=[{"filename": "briefings/x.md", "previous_filename": "src/x.py"}])
-        self.assertIn("src/x.py is outside rule", run(fake)[1])
+        self.assertIn("'src/x.py' is outside rule", run(fake)[1])
 
     def test_too_many_paths_fails(self):
         fake = FakeGitHub(comments=[marker()], policy=POLICY,
@@ -304,6 +304,32 @@ class Glob(unittest.TestCase):
 
 
 class Main(unittest.TestCase):
+    def test_a_path_with_a_line_break_stays_on_one_line(self):
+        fake = FakeGitHub(comments=[marker()], policy=POLICY,
+                          files=[{"filename": "briefings/x.md\n::warning::forged"}])
+        _, msg, _ = run(fake)
+        self.assertNotIn("\n", msg)
+
+    def test_output_is_one_line(self):
+        import contextlib, io
+        real = gate.evaluate
+        gate.evaluate = lambda *a, **k: (False, "title 'x\n::notice::forged'\r\x1b")
+        out = io.StringIO()
+        old = os.environ.copy()
+        os.environ["GITHUB_TOKEN"] = "t"
+        os.environ.pop("GITHUB_STEP_SUMMARY", None)
+        try:
+            with contextlib.redirect_stdout(out):
+                rc = gate.main(["--repo", REPO, "--pr", "7", "--head-sha", HEAD, "--author", AGENT])
+        finally:
+            gate.evaluate = real
+            os.environ.clear()
+            os.environ.update(old)
+        self.assertEqual(rc, 1)
+        self.assertEqual(out.getvalue().count("\n"), 1)
+        self.assertTrue(out.getvalue().startswith("::error::"))
+        self.assertNotIn("\n::", out.getvalue())  # mid-line "::" is not a command
+
     def test_no_token_fails(self):
         env = {k: v for k, v in os.environ.items() if k not in ("GITHUB_TOKEN", "GH_TOKEN")}
         old = os.environ.copy()
