@@ -5,6 +5,35 @@
 Releases are cut per [RELEASING.md](RELEASING.md); callers pin to immutable
 semver tags.
 
+## v1.5.1 (2026-11-02)
+
+### Fixed
+
+- **`site-deploy.yml` fails the job when ECS rolls the deployment back
+  (#92).** lentago/solidago#253 turned on the ECS deployment circuit breaker
+  with `rollback = true` for every platform service. When a deployment's tasks
+  never become healthy, ECS now rolls back to the last completed deployment.
+  The service stabilizes on the old image, and `aws ecs wait services-stable`
+  succeeds, so the job went green although the new image never went live.
+  - "Force new ECS deployment" records the id of the PRIMARY deployment in the
+    `update-service` response. That is the deployment this run started.
+  - "Wait for deployment and verify rollout" replaces "Wait for deployment to
+    stabilize". After the wait, it requires that same deployment to be PRIMARY
+    with `rolloutState` `COMPLETED`. An `IN_PROGRESS` rollout gets up to two
+    minutes to finish.
+  - Any other outcome fails the job and prints the service's last 15 events:
+    a rollback or another update replacing the deployment, a `FAILED` rollout,
+    or a waiter timeout.
+  - The check reads only `ecs:DescribeServices`, which the waiter already
+    needs. Callers need no new IAM.
+- RELEASING.md records how `site-deploy.yml` can be validated, given that the
+  deploy role's OIDC trust admits only a caller's `main` branch.
+- Internal `render-claude-summary` refs point at `v1.5.1`.
+
+Patch, not minor: no input, permission or job name changed. The only effect
+for callers is that a deploy whose image did not go live now reports red, as it
+did before the breaker was turned on.
+
 ## v1.5.0 (2026-10-29)
 
 ### Changed

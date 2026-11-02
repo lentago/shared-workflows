@@ -29,6 +29,21 @@ which records the decision to move from `@main` to immutable semver tags.
 
   The release PR records who runs that check.
 
+  **Exception: `site-deploy.yml`.** The solidago deploy role trusts only the
+  OIDC subject for a caller's `main` (`repo:<org>/<repo>:ref:refs/heads/main`),
+  so a caller branch that repins to `@<branch>` can't assume the role and never
+  reaches the deploy steps. There are two ways to validate it:
+  - **Before tagging:** merge a `@<branch>` pin to one caller's `main` for one
+    deploy, then repin that caller to the tag.
+  - **After tagging:** let one caller's version-bump PR be the validating
+    deploy. Follow steps 1–3 above: if that deploy shows the release is wrong,
+    cut a patch release before any other caller repins.
+
+  Either way, test the step scripts first. Extract them from the workflow and
+  run them against the live service with a stub `aws` that answers the
+  mutating calls. Use fixtures for any branch a real deploy can't safely
+  produce, such as a circuit-breaker rollback.
+
 ## Semver policy for reusable workflows
 
 **What counts as a breaking change (major bump):**

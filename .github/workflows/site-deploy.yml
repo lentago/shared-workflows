@@ -5,6 +5,13 @@
 # to ECR (sha + latest tags), runs a Trivy vulnerability scan, attests the
 # image via actions/attest-build-provenance, then rolls the ECS service.
 #
+# Rollout check: the job passes only if the deployment it started is the one
+# the service ends up running (PRIMARY, rolloutState COMPLETED). When the ECS
+# deployment circuit breaker rolls a failed deployment back, the service
+# stabilizes on the previous deployment and `wait services-stable` succeeds,
+# so the waiter alone would report a rolled-back deploy as green. On failure
+# the job prints the service's recent events.
+#
 # SLSA Build L3 note: building inside a reusable workflow (rather than a
 # workflow defined in the caller's own repo) satisfies SLSA Build L3, because
 # the build definition is hosted in a repository the calling repo cannot
@@ -203,26 +210,106 @@ jobs:
           subject-digest: ${{ steps.digest.outputs.digest }}
           push-to-registry: false
 
+      # Records the id of the deployment this run starts (the PRIMARY entry in
+      # the update-service response), so the next step can check that this
+      # deployment, and not a rollback, is what the service ends up running.
       - name: Force new ECS deployment
+        id: ecs-update
         env:
           ECS_CLUSTER: ${{ inputs.ecs_cluster }}
           ECS_SERVICE: ${{ inputs.ecs_service }}
           AWS_REGION: ${{ inputs.aws_region }}
         run: |
+          RESPONSE="$RUNNER_TEMP/ecs-update-service.json"
           aws ecs update-service \
             --cluster "$ECS_CLUSTER" \
             --service "$ECS_SERVICE" \
             --force-new-deployment \
             --region "$AWS_REGION" \
-            --no-cli-pager
+            --output json \
+            --no-cli-pager > "$RESPONSE"
 
-      - name: Wait for deployment to stabilize
+          read -r DEPLOYMENT_ID TASK_DEFINITION <<< "$(jq -r \
+            '[.service.deployments[] | select(.status == "PRIMARY")][0] | "\(.id) \(.taskDefinition)"' \
+            "$RESPONSE")"
+          if [[ "$DEPLOYMENT_ID" != ecs-svc/* ]]; then
+            echo "::error::update-service returned no PRIMARY deployment for $ECS_SERVICE (got '$DEPLOYMENT_ID')"
+            jq '.service.deployments' "$RESPONSE"
+            exit 1
+          fi
+          echo "Started deployment $DEPLOYMENT_ID with task definition $TASK_DEFINITION"
+          echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+
+      # services-stable alone is not enough: with the deployment circuit
+      # breaker's rollback on, a failed deployment is rolled back to the last
+      # completed one, the service settles on that, and the waiter succeeds.
+      # So after the wait, the deployment this run started must still be the
+      # PRIMARY one and must have rolloutState COMPLETED. A rollback (or any
+      # other update that replaced it) leaves a different PRIMARY and fails
+      # the job. The check uses only ecs:DescribeServices, which the waiter
+      # already needs.
+      - name: Wait for deployment and verify rollout
         env:
           ECS_CLUSTER: ${{ inputs.ecs_cluster }}
           ECS_SERVICE: ${{ inputs.ecs_service }}
           AWS_REGION: ${{ inputs.aws_region }}
+          DEPLOYMENT_ID: ${{ steps.ecs-update.outputs.deployment_id }}
         run: |
-          aws ecs wait services-stable \
-            --cluster "$ECS_CLUSTER" \
-            --services "$ECS_SERVICE" \
-            --region "$AWS_REGION"
+          print_events() {
+            echo "Recent events for $ECS_SERVICE (newest first):"
+            aws ecs describe-services \
+              --cluster "$ECS_CLUSTER" \
+              --services "$ECS_SERVICE" \
+              --region "$AWS_REGION" \
+              --query 'services[0].events[:15].[createdAt, message]' \
+              --output text \
+              --no-cli-pager || true
+          }
+
+          primary_deployment() {
+            aws ecs describe-services \
+              --cluster "$ECS_CLUSTER" \
+              --services "$ECS_SERVICE" \
+              --region "$AWS_REGION" \
+              --query "services[0].deployments[?status=='PRIMARY'] | [0].[id, rolloutState, taskDefinition]" \
+              --output text \
+              --no-cli-pager
+          }
+
+          if ! aws ecs wait services-stable \
+              --cluster "$ECS_CLUSTER" \
+              --services "$ECS_SERVICE" \
+              --region "$AWS_REGION"; then
+            echo "::error::$ECS_SERVICE did not reach a steady state for deployment $DEPLOYMENT_ID"
+            print_events
+            exit 1
+          fi
+
+          # The waiter can return a moment before ECS marks the deployment
+          # COMPLETED, so give an IN_PROGRESS rollout up to two minutes.
+          deadline=$((SECONDS + 120))
+          while :; do
+            if ! PRIMARY=$(primary_deployment); then
+              echo "::error::Could not read the deployments of $ECS_SERVICE to verify deployment $DEPLOYMENT_ID"
+              exit 1
+            fi
+            read -r PRIMARY_ID ROLLOUT_STATE RUNNING_TASK_DEFINITION <<< "$PRIMARY"
+            if [[ "$PRIMARY_ID" != "$DEPLOYMENT_ID" || "$ROLLOUT_STATE" != IN_PROGRESS ]] \
+                || (( SECONDS >= deadline )); then
+              break
+            fi
+            sleep 10
+          done
+
+          if [[ "$PRIMARY_ID" == "$DEPLOYMENT_ID" && "$ROLLOUT_STATE" == COMPLETED ]]; then
+            echo "Deployment $DEPLOYMENT_ID completed; $ECS_SERVICE runs $RUNNING_TASK_DEFINITION"
+            exit 0
+          fi
+
+          if [[ "$PRIMARY_ID" != "$DEPLOYMENT_ID" ]]; then
+            echo "::error::Deployment $DEPLOYMENT_ID did not go live: $ECS_SERVICE settled on deployment $PRIMARY_ID ($RUNNING_TASK_DEFINITION, rollout $ROLLOUT_STATE). The circuit breaker rolled it back, or another update replaced it."
+          else
+            echo "::error::Deployment $DEPLOYMENT_ID is PRIMARY but its rollout is $ROLLOUT_STATE, not COMPLETED"
+          fi
+          print_events
+          exit 1

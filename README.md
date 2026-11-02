@@ -255,6 +255,14 @@ for vulnerabilities with Trivy, attests the image with
 `actions/attest-build-provenance`, then rolls the ECS service and waits for
 stabilization. Authenticates via OIDC — no long-lived AWS credentials.
 
+**Rollout check (v1.5.1+):** the job fails unless the deployment it started
+ends up as the service's PRIMARY deployment with `rolloutState` `COMPLETED`.
+With the ECS deployment circuit breaker's rollback on, a failed deployment is
+rolled back, the service stabilizes on the previous one, and
+`aws ecs wait services-stable` succeeds anyway. The check catches that case
+and prints the service's recent events. It needs only `ecs:DescribeServices`,
+which the wait already uses.
+
 **SLSA Build L3:** building inside a reusable workflow (hosted in a separate
 repository that callers cannot modify) satisfies SLSA Build L3. Attestations
 are stored in GitHub's Sigstore-backed store and can be verified offline:
