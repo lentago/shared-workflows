@@ -13,8 +13,9 @@
 # editing this file, and the job fails if the glob matches nothing.
 #
 # Not a reusable workflow: these are this repo's tests, and callers never run
-# them. Unconditional, with no `paths:` filter, so its context
-# (`ci-tests / unit-tests`) can become a required check without holding
+# them. Unconditional, with no `paths:` filter, so its context (`unit-tests`,
+# the job's name; the UI shows it as "ci-tests / unit-tests") can become a
+# required check without holding
 # non-matching PRs at "Expected". Making it required is lentago/.github's
 # required-checks.json, after it has been seen reporting here.
 # ============================================================================
