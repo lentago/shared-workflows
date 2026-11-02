@@ -1,6 +1,6 @@
 # ADR-0005: Callers migrate from `@main` to immutable semver tags; `@main` is no longer a supported consumption path
 
-**Status:** Accepted (2026-08-16) · Supersedes [ADR-0002](0002-reusables-called-by-reference-float-on-main.md)
+**Status:** Accepted (2026-08-16) · Supersedes [ADR-0002](0002-reusables-called-by-reference-float-on-main.md) · Addendum [2026-11-01](#addendum-2026-11-01): tag ruleset applied, full-SHA pinning declined
 
 ## Context
 
@@ -97,3 +97,28 @@ baseline to move from.
   `@main` was sound at repo inception; this decision reflects the fleet
   reaching a scale and posture where the deferred tagging work becomes the
   right next step, exactly as ADR-0002 described.
+
+## Addendum 2026-11-01
+
+On 2026-11-01 the GitHub release API reported `immutable: false` for `v1.5.0`,
+and no repository ruleset or tag protection covered tags. The immutability this
+ADR relies on was therefore a convention held by operator discipline: a `v*` tag
+could be moved or deleted. The tag ruleset tracked in
+[lentago/.github#305](https://github.com/lentago/.github/issues/305) was applied
+the same day ([lentago/.github#308](https://github.com/lentago/.github/pull/308):
+ruleset `release-tags` on `refs/tags/v*`, deletion and update forbidden, no
+bypass actors). GitHub's immutable-releases setting cannot yet be expressed in
+the Terraform provider; [lentago/.github#307](https://github.com/lentago/.github/issues/307)
+tracks it.
+
+**Decision (not to adopt full-SHA pinning fleet-wide).** Callers keep the
+semver-tag form described above and do not move to full-commit-SHA pins across
+the fleet. What makes a `v*` tag a fixed point is the tag ruleset, not shared
+ownership of caller and callee: with deletion and update forbidden and no bypass
+actors, the tag cannot be re-pointed through git, which closes the gap this
+addendum records. A SHA pin remains the stronger binding, because it names the
+content itself and survives a later change to the ruleset by a repository
+admin. That residual risk is accepted: the ruleset is Terraform-managed from
+the `.github` meta-repo, so changing it means a reviewed pull request and a
+plan, not a settings click. The cost argument in the Alternatives section
+stands: a SHA pin would mean a bump in every caller on every release.
