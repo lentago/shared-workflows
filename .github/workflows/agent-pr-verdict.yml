@@ -212,8 +212,11 @@ jobs:
             echo "::error::the agent-pr-gate environment can't be read, so its branch policy can't be confirmed; no verdict is posted"
             exit 1
           }
-          custom=$(jq -r '.deployment_branch_policy.custom_branch_policies // false' <<<"$env_json")
-          bypass=$(jq -r '.can_admins_bypass // true' <<<"$env_json")
+          # Compare explicitly: jq's `//` treats `false` as absent, so
+          # `.can_admins_bypass // true` would read a protected environment's
+          # `false` as `true`. Anything but the exact protected value refuses.
+          custom=$(jq -r 'if .deployment_branch_policy.custom_branch_policies == true then "true" else "false" end' <<<"$env_json")
+          bypass=$(jq -r 'if .can_admins_bypass == false then "false" else "true" end' <<<"$env_json")
           if [[ "$custom" != "true" || "$bypass" != "false" ]]; then
             echo "::error::the agent-pr-gate environment is unprotected (custom branch policies: $custom, admin bypass: $bypass); it must be created by lentago/.github's Terraform, with deployment branches limited to main and no admin bypass, before any caller references it"
             exit 1
