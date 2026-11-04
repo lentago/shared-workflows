@@ -206,11 +206,14 @@ moment the required checks are green, so arming *is* the merge decision.
   ([#84](https://github.com/lentago/shared-workflows/issues/84)) enforces
   this once it is required. A session may arm such a PR. Only the Director
   (`lentago-director`, the operator's direct agent) may submit that approval
-  for him, under ADR-0014's
+  for the operator, under ADR-0014's
   [2026-11-04 amendment](https://github.com/lentago/.github/blob/main/docs/adr/0014-merge-promise-humans-own-the-policy.md#amendment-2026-11-04).
   It approves a head only once the review rule above is met for it, and its
   review body names the Director and the amendment. No other session ever
   submits that approval, even though it runs under the operator's identity.
+  The gate cannot tell one session's approval from another's and checks none
+  of the review bar, so these bounds hold by session discipline and the
+  review-body audit trail, not by a check.
 
 The review is advisory, never a required status check. This rule is the
 *review* gate. The required status checks remain the merge gate (below).
